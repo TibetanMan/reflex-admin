@@ -107,6 +107,80 @@ def test_create_manual_deposit_persists_deposit_and_balance_ledger(tmp_path: Pat
     session.close()
 
 
+def test_create_manual_deposit_blocks_when_bot_wallet_missing(tmp_path: Path):
+    import pytest
+
+    from services.finance_service import create_manual_deposit
+
+    session_factory = _session_factory(tmp_path)
+    _seed_finance_rows(session_factory)
+
+    session = session_factory()
+    try:
+        bot_two = BotInstance(
+            token="finance-bot-token-2",
+            name="Second Bot No Wallet",
+            status=BotStatus.ACTIVE,
+            is_enabled=True,
+            is_platform_bot=False,
+            usdt_address="TRX_BOT_TWO_FIELD",
+        )
+        session.add(bot_two)
+        session.commit()
+        session.refresh(bot_two)
+
+        user = session.exec(select(User).where(User.telegram_id == 123456789)).first()
+        assert user is not None
+        user.from_bot_id = int(bot_two.id or 0)
+        session.add(user)
+        session.commit()
+    finally:
+        session.close()
+
+    with pytest.raises(ValueError, match="wallet"):
+        create_manual_deposit(
+            user_identifier="123456789",
+            amount=Decimal("10.00"),
+            remark="manual",
+            operator_username="admin",
+            session_factory=session_factory,
+        )
+
+
+def test_create_manual_deposit_does_not_fallback_to_bot_usdt_address(tmp_path: Path):
+    import pytest
+
+    from services.finance_service import create_manual_deposit
+
+    session_factory = _session_factory(tmp_path)
+    _seed_finance_rows(session_factory)
+
+    session = session_factory()
+    try:
+        user = session.exec(select(User).where(User.telegram_id == 123456789)).first()
+        bot = session.exec(select(BotInstance).where(BotInstance.id == int(user.from_bot_id or 0))).first()
+        wallets = list(session.exec(select(WalletAddress)).all())
+
+        assert user is not None
+        assert bot is not None
+        for row in wallets:
+            session.delete(row)
+        bot.usdt_address = "TRX_FALLBACK_FIELD_ONLY"
+        session.add(bot)
+        session.commit()
+    finally:
+        session.close()
+
+    with pytest.raises(ValueError, match="wallet"):
+        create_manual_deposit(
+            user_identifier="123456789",
+            amount=Decimal("10.00"),
+            remark="manual",
+            operator_username="admin",
+            session_factory=session_factory,
+        )
+
+
 def test_list_finance_views_return_deposit_and_wallet_rows(tmp_path: Path):
     from services.finance_service import (
         create_manual_deposit,

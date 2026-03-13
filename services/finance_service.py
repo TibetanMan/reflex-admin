@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 from sqlmodel import Session, select
 
 from services.deposit_chain_service import sync_pending_usdt_deposits
+from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
 from shared.models.admin_user import AdminUser
@@ -190,6 +191,7 @@ def create_manual_deposit(
             bot = session.exec(select(BotInstance).order_by(BotInstance.id.asc())).first()
         if bot is None:
             raise ValueError("No bot instance available.")
+        wallet = resolve_wallet_by_bot_or_raise(session, bot_id=int(bot.id or 0))
 
         operator = session.exec(
             select(AdminUser).where(AdminUser.username == str(operator_username or "").strip())
@@ -212,30 +214,23 @@ def create_manual_deposit(
             amount=amount_value,
             actual_amount=amount_value,
             method=DepositMethod.MANUAL,
-            to_address=str(bot.usdt_address or "-"),
+            to_address=str(wallet.address),
             status=DepositStatus.COMPLETED,
             operator_id=int(operator.id or 0) if operator else None,
             operator_remark=str(remark or "手动充值"),
             completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         session.add(deposit)
-
-        wallet = session.exec(
-            select(WalletAddress).where(WalletAddress.bot_id == int(bot.id or 0))
-        ).first()
-        if wallet is None:
-            wallet = session.exec(select(WalletAddress).order_by(WalletAddress.id.asc())).first()
-        if wallet is not None:
-            wallet.balance = (Decimal(str(wallet.balance or 0)) + amount_value).quantize(
-                Decimal("0.01"),
-                rounding=ROUND_HALF_UP,
-            )
-            wallet.total_received = (Decimal(str(wallet.total_received or 0)) + amount_value).quantize(
-                Decimal("0.01"),
-                rounding=ROUND_HALF_UP,
-            )
-            wallet.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            session.add(wallet)
+        wallet.balance = (Decimal(str(wallet.balance or 0)) + amount_value).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        wallet.total_received = (Decimal(str(wallet.total_received or 0)) + amount_value).quantize(
+            Decimal("0.01"),
+            rounding=ROUND_HALF_UP,
+        )
+        wallet.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        session.add(wallet)
 
         session.add(
             BalanceLedger(
