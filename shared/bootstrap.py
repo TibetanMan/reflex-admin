@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import secrets
@@ -48,6 +49,9 @@ from shared.models.user import User
 from shared.models.user_export import ExportTask, ExportTaskStatus, ExportTaskType, UserBotSource
 from shared.models.wallet import WalletAddress, WalletStatus
 from services.security_errors import SecurityPolicyError
+
+
+logger = logging.getLogger(__name__)
 
 
 DEFAULT_SUPER_ADMIN_USERNAME = "admin"
@@ -976,7 +980,13 @@ def _pick_backfill_bot_id(session: Session, *, user: User, default_bot_id: int) 
 
 def bootstrap_bot_user_accounts(session: Session) -> int:
     """Backfill bot_user_accounts for legacy rows and fill missing cart bot context."""
-    default_bot_id = _pick_default_bot_id(session)
+    try:
+        default_bot_id = _pick_default_bot_id(session)
+    except ValueError:
+        # Fresh production deployments can intentionally start without any bot instance.
+        # In that case, defer backfill until at least one bot is created.
+        logger.warning("Skip bot_user_accounts backfill: no bot instance available yet.")
+        return 0
     created = 0
 
     users = list(session.exec(select(User).order_by(User.id.asc())).all())
