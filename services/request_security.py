@@ -31,6 +31,7 @@ _ROUTE_POLICIES: tuple[RoutePolicy, ...] = (
     RoutePolicy("POST", re.compile(r"^/api/v1/push/reviews/\d+/approve$"), require_auth=True, required_role="super_admin"),
     RoutePolicy("POST", re.compile(r"^/api/v1/push/campaigns$"), require_auth=True, required_role="super_admin"),
     RoutePolicy("POST", re.compile(r"^/api/v1/push/campaigns/\d+/cancel$"), require_auth=True, required_role="super_admin"),
+    RoutePolicy("POST", re.compile(r"^/api/v1/admin/accounts$"), require_auth=True, required_role="super_admin"),
     RoutePolicy("PUT", re.compile(r"^/api/v1/settings/default-usdt-address$"), require_auth=True, required_role="super_admin"),
     RoutePolicy("PUT", re.compile(r"^/api/v1/settings/usdt-query-api$"), require_auth=True, required_role="super_admin"),
     RoutePolicy("PUT", re.compile(r"^/api/v1/settings/bins-query-api$"), require_auth=True, required_role="super_admin"),

@@ -26,6 +26,9 @@ from services.auth_service import (
 from services.auth_service import (
     refresh_admin_session as refresh_admin_session_service,
 )
+from services.admin_account_service import (
+    create_admin_account as create_admin_account_service,
+)
 from services.inventory_service import (
     delete_inventory_library as delete_inventory_library_service,
 )
@@ -354,6 +357,16 @@ def dispatch_request(
     if m == "POST" and p == "/api/v1/auth/refresh":
         data = refresh_admin_session_service(username=str(body.get("username") or ""))
         return data or {}
+
+    if m == "POST" and p == "/api/v1/admin/accounts":
+        return create_admin_account_service(
+            actor_username=str(body.get("actor_username") or "").strip(),
+            username=str(body.get("username") or "").strip(),
+            display_name=str(body.get("display_name") or "").strip(),
+            role=str(body.get("role") or "").strip(),
+            email=str(body.get("email") or "").strip(),
+            initial_password=str(body.get("initial_password") or ""),
+        )
 
     if m == "GET" and p == "/api/v1/finance/deposits":
         return list_finance_deposits_service()

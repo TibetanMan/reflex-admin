@@ -14,6 +14,7 @@ from .finance import finance_page
 from .agents import agents_page
 from .merchants import merchants_page
 from .push import push_page
+from .account_access_help import request_access_page, password_reset_help_page
 from .errors import (
     page_404,
     page_403,
@@ -40,6 +41,8 @@ __all__ = [
     "agents_page",
     "merchants_page",
     "push_page",
+    "request_access_page",
+    "password_reset_help_page",
     "page_404",
     "page_403",
     "page_500",

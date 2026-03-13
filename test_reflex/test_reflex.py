@@ -20,6 +20,7 @@ from .pages import (
     login,
     merchants_page,
     orders_page,
+    password_reset_help_page,
     page_403,
     page_404,
     page_500,
@@ -30,6 +31,7 @@ from .pages import (
     page_offline,
     profile,
     push_page,
+    request_access_page,
     settings,
     table_page,
     users_page,
@@ -102,6 +104,16 @@ app = rx.App(
 _register_runtime_lifespan_tasks(app)
 
 app.add_page(login, route="/login", title="Login | Bot Admin")
+app.add_page(
+    request_access_page,
+    route="/account/request-access",
+    title="Request Access | Bot Admin",
+)
+app.add_page(
+    password_reset_help_page,
+    route="/account/password-reset-help",
+    title="Password Reset Help | Bot Admin",
+)
 app.add_page(index, route="/", title="Dashboard | Bot Admin")
 
 app.add_page(bots_page, route="/bots", title="Bots | Bot Admin")

@@ -261,6 +261,35 @@ def test_reflex_dispatch_exposes_management_routes(monkeypatch):
     assert merchants[0]["name"] == "Merchant B"
 
 
+def test_admin_account_dispatch_routes_to_service(monkeypatch):
+    module = importlib.import_module("services.reflex_api")
+    monkeypatch.setattr(
+        module,
+        "get_admin_profile_service",
+        lambda username="": {"username": username, "role": "super_admin", "is_active": True},
+    )
+    monkeypatch.setattr(
+        module,
+        "create_admin_account_service",
+        lambda **kwargs: {"username": kwargs["username"], "role": kwargs["role"]},
+        raising=False,
+    )
+
+    payload = module.dispatch_request(
+        "POST",
+        "/api/v1/admin/accounts",
+        {
+            "actor_username": "admin",
+            "username": "new_admin",
+            "display_name": "New Admin",
+            "role": "agent",
+        },
+    )
+
+    assert payload["username"] == "new_admin"
+    assert payload["role"] == "agent"
+
+
 def test_auth_dispatch_returns_service_payload(monkeypatch):
     module = importlib.import_module("services.reflex_api")
 

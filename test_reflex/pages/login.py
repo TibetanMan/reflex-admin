@@ -208,7 +208,7 @@ def login() -> rx.Component:
                         rx.spacer(),
                         rx.link(
                             rx.text("忘记密码?", font_size="13px", color=rx.color("accent", 11), font_weight="500"),
-                            href="#",
+                            href="/account/password-reset-help",
                         ),
                         width="100%",
                         margin_top="14px",
@@ -264,7 +264,7 @@ def login() -> rx.Component:
                         rx.text("还没有账户?", font_size="13px", color=rx.color("gray", 10)),
                         rx.link(
                             rx.text("立即注册", font_size="13px", font_weight="600", color=rx.color("accent", 11)),
-                            href="#",
+                            href="/account/request-access",
                         ),
                         spacing="1",
                         margin_top="20px",
