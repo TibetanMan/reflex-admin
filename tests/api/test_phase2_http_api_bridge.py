@@ -361,11 +361,43 @@ def test_finance_manual_deposit_route_propagates_wallet_error(monkeypatch):
             "POST",
             "/api/v1/finance/deposits/manual",
             {
+                "actor_username": "admin",
                 "user_identifier": "10001",
                 "amount": "9.99",
                 "remark": "manual",
                 "operator_username": "admin",
             },
+        )
+
+
+def test_dispatch_rejects_missing_actor_on_sensitive_write():
+    module = importlib.import_module("services.reflex_api")
+
+    with pytest.raises(PermissionError):
+        module.dispatch_request(
+            "POST",
+            "/api/v1/finance/deposits/manual",
+            {
+                "user_identifier": "10001",
+                "amount": "9.99",
+                "remark": "manual",
+            },
+        )
+
+
+def test_dispatch_rejects_non_super_admin_for_settings_write(monkeypatch):
+    module = importlib.import_module("services.reflex_api")
+    monkeypatch.setattr(
+        module,
+        "get_admin_profile_service",
+        lambda username="": {"username": username, "role": "agent", "is_active": True},
+    )
+
+    with pytest.raises(PermissionError):
+        module.dispatch_request(
+            "PUT",
+            "/api/v1/settings/default-usdt-address",
+            {"address": "T-NEW-ADDR", "operator_username": "agent1"},
         )
 
 
@@ -431,6 +463,11 @@ def test_user_dispatch_routes_to_services(monkeypatch):
 
 def test_push_dispatch_routes_to_services(monkeypatch):
     module = importlib.import_module("services.reflex_api")
+    monkeypatch.setattr(
+        module,
+        "get_admin_profile_service",
+        lambda username="": {"username": username, "role": "super_admin", "is_active": True},
+    )
 
     monkeypatch.setattr(module, "list_review_tasks_service", lambda: [{"id": 31}])
     monkeypatch.setattr(
@@ -456,7 +493,7 @@ def test_push_dispatch_routes_to_services(monkeypatch):
     campaign = module.dispatch_request(
         "POST",
         "/api/v1/push/campaigns",
-        {"scope": "inventory"},
+        {"scope": "inventory", "actor_username": "super_admin"},
     )
     result = module.dispatch_request("POST", "/api/v1/push/process", {"batch_size": 10})
     campaigns = module.dispatch_request("GET", "/api/v1/push/campaigns")

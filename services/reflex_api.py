@@ -10,6 +10,10 @@ import re
 from decimal import Decimal
 from typing import Any
 
+from services.request_security import (
+    enforce_route_policy,
+    resolve_actor_profile_for_policy,
+)
 from services.auth_service import (
     authenticate_admin as authenticate_admin_service,
 )
@@ -325,6 +329,13 @@ def dispatch_request(
     m = str(method or "").upper()
     p = str(path or "").strip()
     body = payload or {}
+    actor_profile = resolve_actor_profile_for_policy(
+        method=m,
+        path=p,
+        body=body,
+        profile_lookup=lambda actor_username: get_admin_profile_service(username=actor_username),
+    )
+    enforce_route_policy(method=m, path=p, body=body, actor_profile=actor_profile)
 
     if m == "POST" and p == "/api/v1/auth/login":
         data = authenticate_admin_service(
@@ -360,7 +371,7 @@ def dispatch_request(
             user_identifier=str(body.get("user_identifier") or "").strip(),
             amount=Decimal(str(body.get("amount") or "0")),
             remark=str(body.get("remark") or ""),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     if m == "POST" and p == "/api/v1/finance/deposits/manual":
@@ -368,7 +379,7 @@ def dispatch_request(
             user_identifier=str(body.get("user_identifier") or "").strip(),
             amount=Decimal(str(body.get("amount") or "0")),
             remark=str(body.get("remark") or ""),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     if m == "POST" and p == "/api/v1/finance/deposits/reconcile":
@@ -382,7 +393,7 @@ def dispatch_request(
     if m == "PUT" and p == "/api/v1/settings/default-usdt-address":
         return update_default_usdt_address_service(
             address=str(body.get("address") or "").strip(),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     if m == "PUT" and p == "/api/v1/settings/usdt-query-api":
@@ -390,7 +401,7 @@ def dispatch_request(
             api_url=str(body.get("api_url") or "").strip(),
             api_key=str(body.get("api_key") or "").strip(),
             timeout_seconds=int(body.get("timeout_seconds") or 8),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     if m == "PUT" and p == "/api/v1/settings/bins-query-api":
@@ -398,7 +409,7 @@ def dispatch_request(
             api_url=str(body.get("api_url") or "").strip(),
             api_key=str(body.get("api_key") or "").strip(),
             timeout_seconds=int(body.get("timeout_seconds") or 8),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     if m == "PUT" and p == "/api/v1/settings/telegram-push":
@@ -409,7 +420,7 @@ def dispatch_request(
             push_interval_seconds=int(body.get("push_interval_seconds") or 5),
             max_messages_per_minute=int(body.get("max_messages_per_minute") or 30),
             retry_times=int(body.get("retry_times") or 3),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     if m == "GET" and p == "/api/v1/profile":
@@ -447,7 +458,7 @@ def dispatch_request(
             delimiter=str(body.get("delimiter") or "|"),
             content=str(body.get("content") or ""),
             push_ad=bool(body.get("push_ad", False)),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
             source_filename=str(body.get("source_filename") or "inventory_upload.txt"),
         )
 
@@ -780,7 +791,7 @@ def dispatch_request(
         return refund_order_service(
             order_id=order_id,
             reason=str(body.get("reason") or ""),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     matched = _ORDER_REFRESH_RE.fullmatch(p)
@@ -814,7 +825,7 @@ def dispatch_request(
     matched = _USER_STATUS_RE.fullmatch(p)
     if m == "PATCH" and matched:
         user_id = int(matched.group(1))
-        operator_username = str(body.get("operator_username") or "admin")
+        operator_username = str(body.get("operator_username") or "").strip()
         action = str(body.get("action") or "").strip().lower()
         scope = str(body.get("scope") or "global").strip().lower() or "global"
         source_bot_name = str(body.get("source_bot_name") or body.get("source_bot_id") or "")
@@ -841,7 +852,7 @@ def dispatch_request(
         user_id = int(matched.group(1))
         return toggle_user_ban_service(
             user_id=user_id,
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
             scope=str(body.get("scope") or "global"),
             source_bot_name=str(body.get("source_bot_name") or body.get("source_bot_id") or ""),
         )
@@ -856,7 +867,7 @@ def dispatch_request(
             remark=str(body.get("remark") or ""),
             source_bot_name=str(body.get("source_bot_name") or ""),
             request_id=str(body.get("request_id") or ""),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     matched = _USER_BALANCE_ADJUSTMENTS_RE.fullmatch(p)
@@ -872,7 +883,7 @@ def dispatch_request(
             remark=str(body.get("remark") or ""),
             source_bot_name=source_bot_name,
             request_id=str(body.get("request_id") or ""),
-            operator_username=str(body.get("operator_username") or "admin"),
+            operator_username=str(body.get("operator_username") or "").strip(),
         )
 
     matched = _USER_DEPOSIT_RECORDS_RE.fullmatch(p)

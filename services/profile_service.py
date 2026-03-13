@@ -8,7 +8,7 @@ from typing import Any, Callable, Optional
 from sqlmodel import Session, select
 
 from shared.database import get_db_session
-from shared.models.admin_user import AdminRole, AdminUser
+from shared.models.admin_user import AdminUser
 
 
 def _to_text(value: Optional[datetime], fmt: str = "%Y-%m-%d %H:%M") -> str:
@@ -34,18 +34,9 @@ def _row_to_snapshot(row: AdminUser) -> dict[str, Any]:
 
 def _pick_user(session: Session, username: str = "") -> Optional[AdminUser]:
     username_text = str(username or "").strip()
-    if username_text:
-        row = session.exec(select(AdminUser).where(AdminUser.username == username_text)).first()
-        if row is not None:
-            return row
-
-    super_admin = session.exec(
-        select(AdminUser).where(AdminUser.role == AdminRole.SUPER_ADMIN).order_by(AdminUser.id.asc())
-    ).first()
-    if super_admin is not None:
-        return super_admin
-
-    return session.exec(select(AdminUser).order_by(AdminUser.id.asc())).first()
+    if not username_text:
+        return None
+    return session.exec(select(AdminUser).where(AdminUser.username == username_text)).first()
 
 
 def get_profile_snapshot(
@@ -53,10 +44,14 @@ def get_profile_snapshot(
     username: str = "",
     session_factory: Optional[Callable[[], Session]] = None,
 ) -> dict[str, Any]:
+    username_text = str(username or "").strip()
+    if not username_text:
+        raise ValueError("Profile username is required.")
+
     make_session = session_factory or get_db_session
     session = make_session()
     try:
-        row = _pick_user(session, username=username)
+        row = _pick_user(session, username=username_text)
         if row is None:
             raise ValueError("Admin user not found.")
         return _row_to_snapshot(row)
@@ -73,10 +68,14 @@ def update_profile_snapshot(
     avatar_url: str,
     session_factory: Optional[Callable[[], Session]] = None,
 ) -> dict[str, Any]:
+    username_text = str(username or "").strip()
+    if not username_text:
+        raise ValueError("Profile username is required.")
+
     make_session = session_factory or get_db_session
     session = make_session()
     try:
-        row = _pick_user(session, username=username)
+        row = _pick_user(session, username=username_text)
         if row is None:
             raise ValueError("Admin user not found.")
 
@@ -107,6 +106,10 @@ def update_profile_password(
     new_password: str,
     session_factory: Optional[Callable[[], Session]] = None,
 ) -> dict[str, Any]:
+    username_text = str(username or "").strip()
+    if not username_text:
+        raise ValueError("Profile username is required.")
+
     old_text = str(old_password or "")
     new_text = str(new_password or "")
     if not old_text:
@@ -119,7 +122,7 @@ def update_profile_password(
     make_session = session_factory or get_db_session
     session = make_session()
     try:
-        row = _pick_user(session, username=username)
+        row = _pick_user(session, username=username_text)
         if row is None:
             raise ValueError("Admin user not found.")
         if not row.verify_password(old_text):
