@@ -17,6 +17,24 @@ def test_finance_state_manual_deposit_calls_finance_service():
     assert "create_manual_deposit(" in source
 
 
+def test_finance_state_manual_deposit_surfaces_service_error(monkeypatch):
+    import test_reflex.state.finance_state as finance_state_module
+
+    def _raise_wallet_error(**kwargs):
+        del kwargs
+        raise ValueError("Current bot has no configured receiving wallet.")
+
+    monkeypatch.setattr(finance_state_module, "create_manual_deposit", _raise_wallet_error)
+
+    state = FinanceState()
+    state.manual_user_id = "123456789"
+    state.manual_amount = "10.00"
+    state.manual_remark = "manual"
+
+    event = state.process_manual_deposit(operator_username="admin")
+    assert "wallet" in str(event).lower()
+
+
 def test_finance_state_onchain_sync_calls_finance_service():
     source = inspect.getsource(FinanceState.sync_onchain_deposits.fn)
 

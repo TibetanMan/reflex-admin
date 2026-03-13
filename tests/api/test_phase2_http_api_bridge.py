@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import pytest
 
 def test_settings_dispatch_returns_service_payload(monkeypatch):
     api_module = importlib.import_module("services.reflex_api")
@@ -344,6 +345,28 @@ def test_finance_dispatch_routes_to_services(monkeypatch):
     assert created["operator"] == "admin"
     assert synced["completed"] == 1
     assert synced["limit"] == 9
+
+
+def test_finance_manual_deposit_route_propagates_wallet_error(monkeypatch):
+    module = importlib.import_module("services.reflex_api")
+
+    def _raise_wallet_error(**kwargs):
+        del kwargs
+        raise ValueError("Current bot has no configured receiving wallet.")
+
+    monkeypatch.setattr(module, "create_manual_deposit_service", _raise_wallet_error, raising=False)
+
+    with pytest.raises(ValueError, match="wallet"):
+        module.dispatch_request(
+            "POST",
+            "/api/v1/finance/deposits/manual",
+            {
+                "user_identifier": "10001",
+                "amount": "9.99",
+                "remark": "manual",
+                "operator_username": "admin",
+            },
+        )
 
 
 def test_order_dispatch_routes_to_services(monkeypatch):
