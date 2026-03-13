@@ -89,6 +89,78 @@ def edit_profile_modal() -> rx.Component:
     )
 
 
+def change_password_modal() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("修改密码"),
+            rx.dialog.description("输入当前密码并设置新的登录密码"),
+            rx.vstack(
+                rx.vstack(
+                    rx.text("当前密码", size="2", weight="medium"),
+                    rx.input(
+                        value=ProfileState.password_current,
+                        on_change=ProfileState.set_password_current,
+                        placeholder="请输入当前密码",
+                        type="password",
+                        width="100%",
+                    ),
+                    width="100%",
+                    align="start",
+                    spacing="1",
+                ),
+                rx.vstack(
+                    rx.text("新密码", size="2", weight="medium"),
+                    rx.input(
+                        value=ProfileState.password_new,
+                        on_change=ProfileState.set_password_new,
+                        placeholder="请输入新密码",
+                        type="password",
+                        width="100%",
+                    ),
+                    width="100%",
+                    align="start",
+                    spacing="1",
+                ),
+                rx.vstack(
+                    rx.text("确认新密码", size="2", weight="medium"),
+                    rx.input(
+                        value=ProfileState.password_confirm,
+                        on_change=ProfileState.set_password_confirm,
+                        placeholder="请再次输入新密码",
+                        type="password",
+                        width="100%",
+                    ),
+                    width="100%",
+                    align="start",
+                    spacing="1",
+                ),
+                spacing="3",
+                width="100%",
+                margin_y="8px",
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button(
+                        "取消",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=ProfileState.close_password_modal,
+                    )
+                ),
+                rx.spacer(),
+                rx.button(
+                    "更新密码",
+                    on_click=ProfileState.change_password,
+                ),
+                width="100%",
+            ),
+            max_width="520px",
+        ),
+        open=ProfileState.show_password_modal,
+        on_open_change=ProfileState.handle_password_modal_change,
+    )
+
+
 @template
 def profile() -> rx.Component:
     return rx.vstack(
@@ -109,6 +181,12 @@ def profile() -> rx.Component:
                         variant="outline",
                         margin_top="16px",
                         on_click=ProfileState.open_edit_modal,
+                    ),
+                    rx.button(
+                        "修改密码",
+                        variant="soft",
+                        color_scheme="indigo",
+                        on_click=ProfileState.open_password_modal,
                     ),
                     spacing="3",
                     align="center",
@@ -149,6 +227,7 @@ def profile() -> rx.Component:
             },
         ),
         edit_profile_modal(),
+        change_password_modal(),
         width="100%",
         spacing="6",
         align="start",

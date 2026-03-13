@@ -6,7 +6,11 @@ from typing import Dict
 
 import reflex as rx
 
-from services.profile_api import get_profile_snapshot, update_profile_snapshot
+from services.profile_api import (
+    get_profile_snapshot,
+    update_profile_password,
+    update_profile_snapshot,
+)
 
 
 class ProfileState(rx.State):
@@ -28,6 +32,10 @@ class ProfileState(rx.State):
     edit_email: str = ""
     edit_phone: str = ""
     edit_avatar_url: str = ""
+    show_password_modal: bool = False
+    password_current: str = ""
+    password_new: str = ""
+    password_confirm: str = ""
 
     def _apply_snapshot(self, row: Dict[str, object]) -> None:
         self.profile_id = int(row.get("id") or 0)
@@ -98,6 +106,55 @@ class ProfileState(rx.State):
         self._apply_snapshot(row)
         self.show_edit_modal = False
         return rx.toast.success("个人资料已保存", duration=1800)
+
+    def open_password_modal(self):
+        self.password_current = ""
+        self.password_new = ""
+        self.password_confirm = ""
+        self.show_password_modal = True
+
+    def close_password_modal(self):
+        self.show_password_modal = False
+
+    def handle_password_modal_change(self, is_open: bool):
+        if not is_open:
+            self.close_password_modal()
+
+    def set_password_current(self, value: str):
+        self.password_current = value
+
+    def set_password_new(self, value: str):
+        self.password_new = value
+
+    def set_password_confirm(self, value: str):
+        self.password_confirm = value
+
+    def change_password(self):
+        old_password = self.password_current.strip()
+        new_password = self.password_new.strip()
+        confirm_password = self.password_confirm.strip()
+
+        if not old_password or not new_password or not confirm_password:
+            return rx.toast.error("Please fill all password fields", duration=2200)
+        if new_password != confirm_password:
+            return rx.toast.error("New passwords do not match", duration=2200)
+        if old_password == new_password:
+            return rx.toast.error("New password must be different from current password", duration=2200)
+
+        try:
+            update_profile_password(
+                username=self.username,
+                old_password=old_password,
+                new_password=new_password,
+            )
+        except ValueError as exc:
+            return rx.toast.error(str(exc), duration=2200)
+
+        self.password_current = ""
+        self.password_new = ""
+        self.password_confirm = ""
+        self.show_password_modal = False
+        return rx.toast.success("Password updated successfully. Please sign in again.", duration=2200)
 
     @rx.var
     def avatar_fallback(self) -> str:

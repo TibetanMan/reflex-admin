@@ -27,9 +27,11 @@ def test_settings_state_uses_settings_service_calls():
 def test_profile_state_uses_profile_service_calls():
     load_source = inspect.getsource(ProfileState.load_profile_data.fn)
     save_source = inspect.getsource(ProfileState.save_profile.fn)
+    password_source = inspect.getsource(ProfileState.change_password.fn)
 
     assert "get_profile_snapshot(" in load_source
     assert "update_profile_snapshot(" in save_source
+    assert "update_profile_password(" in password_source
 
 
 def test_inventory_state_uses_inventory_service_calls():
