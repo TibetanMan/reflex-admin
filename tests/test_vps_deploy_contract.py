@@ -20,7 +20,7 @@ def test_compose_keeps_postgres_redis_internal_and_redis_requires_password():
     source = _read("docker-compose.yml")
     assert "postgres:" in source
     assert "redis:" in source
-    assert "redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}" in source
+    assert "redis-server --appendonly yes --requirepass ${REDIS_PASSWORD" in source
     assert 'redis-cli -a ${REDIS_PASSWORD} ping' in source
     postgres_block = source.split("postgres:")[1].split("redis:")[0]
     redis_block = source.split("redis:")[1].split("web:")[0]
