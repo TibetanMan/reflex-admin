@@ -68,19 +68,17 @@ uv run reflex run
 
 访问 http://localhost:3000
 
-### 4. 启动 Telegram Bot
+### 4. Bot 运行说明
 
-```bash
-uv run python -m bot.main
-```
+Bot supervisor 已集成到 Reflex 生命周期中，`uv run reflex run` 启动后会自动按数据库中启用的 Bot 配置运行。
+不再单独运行 `python -m bot.main`。
 
-## 👤 测试账号
+## 🔐 生产部署注意
 
-| 角色 | 用户名 | 密码 |
-|------|--------|------|
-| 超级管理员 | admin | admin123 |
-| 代理商 | agent1 | agent123 |
-| 供货商 | merchant1 | merchant123 |
+- 不要使用默认密码；`SUPER_ADMIN_PASSWORD` 必须为强密码。
+- 生产环境 Bot Token 由后台 Bot 管理页面配置，不在部署脚本里输入。
+- PostgreSQL (`5432`) 和 Redis (`6379`) 不应对公网开放。
+- 首次登录后请立即修改管理员密码。
 
 ## 📊 功能模块
 
