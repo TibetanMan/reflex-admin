@@ -4,6 +4,11 @@
 *.py[cod]
 assets/external/
 *.db
+*.zip
+temp_decompile/
+uploaded_files/
+.agent/
+.claude/
 # Python-generated files
 __pycache__/
 *.py[oc]

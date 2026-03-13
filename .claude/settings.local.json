@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(tasklist //FI \"PID eq 20636\" 2>/dev/null || echo \"Cannot check\")"
-    ]
-  }
-}
