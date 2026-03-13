@@ -18,6 +18,5 @@ docs/
 uploaded_files/
 .env
 .env.*
-README.md
 backend.zip
 frontend.zip
