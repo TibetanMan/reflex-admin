@@ -45,12 +45,12 @@ This plan covers one focused subsystem: USDT deposit address source-of-truth har
 - Modify: none
 - Test: none
 
-- [ ] **Step 1: Ensure execution isolation (recommended)**
+- [x] **Step 1: Ensure execution isolation (recommended)**
 
 Run: `git worktree list`
 Expected: verify worktree context; if absent, create a dedicated one before implementation.
 
-- [ ] **Step 2: Baseline smoke before changes**
+- [x] **Step 2: Baseline smoke before changes**
 
 Run: `uv run pytest tests/services/test_bot_side_service.py tests/services/test_finance_service.py tests/services/test_deposit_reconcile_runtime.py -q`
 Expected: PASS on current baseline.
@@ -63,7 +63,7 @@ Expected: PASS on current baseline.
 - Create: `tests/services/test_deposit_wallet_resolver.py`
 - Test: `tests/services/test_deposit_wallet_resolver.py`
 
-- [ ] **Step 1: Write failing test for success case (`bot_id` wallet exists)**
+- [x] **Step 1: Write failing test for success case (`bot_id` wallet exists)**
 
 ```python
 from sqlmodel import select
@@ -77,7 +77,7 @@ def test_resolve_wallet_by_bot_returns_target_wallet(tmp_path):
     assert str(wallet.address) == "TRX_BOT_2"
 ```
 
-- [ ] **Step 2: Write failing test for missing wallet strict-block**
+- [x] **Step 2: Write failing test for missing wallet strict-block**
 
 ```python
 import pytest
@@ -89,7 +89,7 @@ def test_resolve_wallet_by_bot_raises_when_missing(tmp_path):
         resolve_wallet_by_bot_or_raise(session, bot_id=9)
 ```
 
-- [ ] **Step 3: Write failing test for inactive wallet strict-block**
+- [x] **Step 3: Write failing test for inactive wallet strict-block**
 
 ```python
 import pytest
@@ -101,7 +101,7 @@ def test_resolve_wallet_by_bot_raises_when_inactive(tmp_path):
         resolve_wallet_by_bot_or_raise(session, bot_id=3)
 ```
 
-- [ ] **Step 4: Run tests to verify RED**
+- [x] **Step 4: Run tests to verify RED**
 
 Run: `uv run pytest tests/services/test_deposit_wallet_resolver.py -q`
 Expected: FAIL with import/function-not-found errors.
@@ -112,7 +112,7 @@ Expected: FAIL with import/function-not-found errors.
 - Create: `services/deposit_wallet_resolver.py`
 - Test: `tests/services/test_deposit_wallet_resolver.py`
 
-- [ ] **Step 1: Implement resolver with strict rules**
+- [x] **Step 1: Implement resolver with strict rules**
 
 ```python
 from __future__ import annotations
@@ -139,12 +139,12 @@ def resolve_wallet_by_bot_or_raise(session: Session, *, bot_id: int) -> WalletAd
     return wallet
 ```
 
-- [ ] **Step 2: Run tests to verify GREEN**
+- [x] **Step 2: Run tests to verify GREEN**
 
 Run: `uv run pytest tests/services/test_deposit_wallet_resolver.py -q`
 Expected: PASS.
 
-- [ ] **Step 3: Commit chunk**
+- [x] **Step 3: Commit chunk**
 
 ```bash
 git add services/deposit_wallet_resolver.py tests/services/test_deposit_wallet_resolver.py
@@ -159,7 +159,7 @@ git commit -m "test+feat: add strict wallet resolver by bot id"
 - Modify: `tests/services/test_bot_side_service.py`
 - Test: `tests/services/test_bot_side_service.py`
 
-- [ ] **Step 1: Add failing test (missing bot wallet blocks creation)**
+- [x] **Step 1: Add failing test (missing bot wallet blocks creation)**
 
 ```python
 import pytest
@@ -172,7 +172,7 @@ def test_create_bot_deposit_blocks_when_target_bot_wallet_missing(tmp_path):
         create_bot_deposit(user_id=1, amount=9.9, bot_id=2, session_factory=session_factory)
 ```
 
-- [ ] **Step 2: Add failing test (must not fallback to first wallet)**
+- [x] **Step 2: Add failing test (must not fallback to first wallet)**
 
 ```python
 import pytest
@@ -185,7 +185,7 @@ def test_create_bot_deposit_does_not_fallback_to_other_bot_wallet(tmp_path):
         create_bot_deposit(user_id=1, amount=9.9, bot_id=2, session_factory=session_factory)
 ```
 
-- [ ] **Step 3: Add failing test (multi-bot uses correct wallet per bot)**
+- [x] **Step 3: Add failing test (multi-bot uses correct wallet per bot)**
 
 ```python
 
@@ -197,7 +197,7 @@ def test_create_bot_deposit_uses_wallet_address_of_requested_bot(tmp_path):
     assert dep2["to_address"] == "TRX_WALLET_BOT_2"
 ```
 
-- [ ] **Step 4: Run tests to verify RED**
+- [x] **Step 4: Run tests to verify RED**
 
 Run: `uv run pytest tests/services/test_bot_side_service.py -k "deposit and wallet" -q`
 Expected: FAIL on new expectations.
@@ -208,7 +208,7 @@ Expected: FAIL on new expectations.
 - Modify: `services/bot_side_service.py`
 - Test: `tests/services/test_bot_side_service.py`
 
-- [ ] **Step 1: Replace fallback wallet/address logic in `create_bot_deposit`**
+- [x] **Step 1: Replace fallback wallet/address logic in `create_bot_deposit`**
 
 ```python
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
@@ -220,18 +220,18 @@ if not to_address:
     raise ValueError("Current bot has no configured receiving wallet.")
 ```
 
-- [ ] **Step 2: Remove legacy fallback behavior**
+- [x] **Step 2: Remove legacy fallback behavior**
 
 Delete behavior that:
 - picks first wallet globally when bot wallet missing
 - falls back to `bot.usdt_address`
 
-- [ ] **Step 3: Run focused tests to verify GREEN**
+- [x] **Step 3: Run focused tests to verify GREEN**
 
 Run: `uv run pytest tests/services/test_bot_side_service.py -k "deposit" -q`
 Expected: PASS.
 
-- [ ] **Step 4: Commit chunk**
+- [x] **Step 4: Commit chunk**
 
 ```bash
 git add services/bot_side_service.py tests/services/test_bot_side_service.py
@@ -246,7 +246,7 @@ git commit -m "test+feat: enforce bot wallet source for bot-side deposits"
 - Modify: `tests/services/test_finance_service.py`
 - Test: `tests/services/test_finance_service.py`
 
-- [ ] **Step 1: Add failing test (manual deposit blocks without bot wallet)**
+- [x] **Step 1: Add failing test (manual deposit blocks without bot wallet)**
 
 ```python
 import pytest
@@ -265,7 +265,7 @@ def test_create_manual_deposit_blocks_when_bot_wallet_missing(tmp_path):
         )
 ```
 
-- [ ] **Step 2: Add failing test (no fallback to bot.usdt_address)**
+- [x] **Step 2: Add failing test (no fallback to bot.usdt_address)**
 
 ```python
 import pytest
@@ -278,7 +278,7 @@ def test_create_manual_deposit_does_not_fallback_to_bot_usdt_address(tmp_path):
         create_manual_deposit(...)
 ```
 
-- [ ] **Step 3: Run tests to verify RED**
+- [x] **Step 3: Run tests to verify RED**
 
 Run: `uv run pytest tests/services/test_finance_service.py -k "manual_deposit and wallet" -q`
 Expected: FAIL on new wallet constraints.
@@ -289,7 +289,7 @@ Expected: FAIL on new wallet constraints.
 - Modify: `services/finance_service.py`
 - Test: `tests/services/test_finance_service.py`
 
-- [ ] **Step 1: Resolve wallet strictly by bot id during manual deposit**
+- [x] **Step 1: Resolve wallet strictly by bot id during manual deposit**
 
 ```python
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
@@ -304,17 +304,17 @@ deposit = Deposit(
 )
 ```
 
-- [ ] **Step 2: Remove legacy wallet fallback logic**
+- [x] **Step 2: Remove legacy wallet fallback logic**
 
 Delete behavior that:
 - searches first wallet globally when bot wallet is missing.
 
-- [ ] **Step 3: Run focused tests to verify GREEN**
+- [x] **Step 3: Run focused tests to verify GREEN**
 
 Run: `uv run pytest tests/services/test_finance_service.py -k "manual_deposit" -q`
 Expected: PASS.
 
-- [ ] **Step 4: Commit chunk**
+- [x] **Step 4: Commit chunk**
 
 ```bash
 git add services/finance_service.py tests/services/test_finance_service.py
@@ -330,7 +330,7 @@ git commit -m "test+feat: enforce bot wallet source for manual deposits"
 - Modify: `tests/test_finance_state_db_bridge.py` (only if missing case)
 - Test: same files
 
-- [ ] **Step 1: Add failing route/state tests only where coverage gap exists**
+- [x] **Step 1: Add failing route/state tests only where coverage gap exists**
 
 ```python
 def test_finance_manual_deposit_route_propagates_wallet_error(...):
@@ -341,21 +341,21 @@ def test_finance_state_manual_deposit_surfaces_service_error(...):
     ...
 ```
 
-- [ ] **Step 2: Run targeted tests to verify RED**
+- [x] **Step 2: Run targeted tests to verify RED**
 
 Run: `uv run pytest tests/api/test_phase2_http_api_bridge.py tests/test_finance_state_db_bridge.py -q`
 Expected: FAIL before minimal fix if new assertions were added.
 
-- [ ] **Step 3: Apply minimal fixes only if needed**
+- [x] **Step 3: Apply minimal fixes only if needed**
 
 Keep route/state interfaces unchanged; adjust only error surface expectations.
 
-- [ ] **Step 4: Re-run targeted tests to verify GREEN**
+- [x] **Step 4: Re-run targeted tests to verify GREEN**
 
 Run: `uv run pytest tests/api/test_phase2_http_api_bridge.py tests/test_finance_state_db_bridge.py -q`
 Expected: PASS.
 
-- [ ] **Step 5: Commit chunk (if code changed)**
+- [x] **Step 5: Commit chunk (if code changed)**
 
 ```bash
 git add tests/api/test_phase2_http_api_bridge.py tests/test_finance_state_db_bridge.py
@@ -368,12 +368,12 @@ git commit -m "test: cover wallet-missing error propagation"
 - Modify: none
 - Test: existing suites
 
-- [ ] **Step 1: Compile critical modules**
+- [x] **Step 1: Compile critical modules**
 
 Run: `uv run python -m py_compile services/deposit_wallet_resolver.py services/bot_side_service.py services/finance_service.py bot/handlers/menu.py`
 Expected: no output, exit code 0.
 
-- [ ] **Step 2: Run core regression set**
+- [x] **Step 2: Run core regression set**
 
 Run:
 `uv run pytest tests/services/test_deposit_wallet_resolver.py tests/services/test_bot_side_service.py tests/services/test_finance_service.py tests/services/test_deposit_reconcile_runtime.py tests/test_app_startup_bootstrap.py tests/api/test_phase2_http_api_bridge.py tests/test_finance_page.py tests/test_finance_state_db_bridge.py tests/bot/test_runtime_lifespan.py tests/bot/test_menu_catalog_mapping.py -q`
@@ -383,13 +383,15 @@ Expected: all PASS.
 
 Run: `uv run pytest -q`
 Expected: PASS (or document unrelated pre-existing failures).
+Note: intentionally skipped because user instruction explicitly requested avoiding `pytest -q`.
 
-- [ ] **Step 4: Final commit**
+- [x] **Step 4: Final commit**
 
 ```bash
 git add services/deposit_wallet_resolver.py services/bot_side_service.py services/finance_service.py tests/services/test_deposit_wallet_resolver.py tests/services/test_bot_side_service.py tests/services/test_finance_service.py tests/api/test_phase2_http_api_bridge.py tests/test_finance_state_db_bridge.py
 git commit -m "feat: enforce wallet_addresses as only source for future USDT deposits"
 ```
+Implemented as chunked commits instead of a single squashed final commit.
 
 ## Done Definition
 
