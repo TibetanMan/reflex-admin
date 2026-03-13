@@ -267,6 +267,129 @@ def test_bot_side_deposit_create_and_read(tmp_path: Path):
     assert row["amount"] == 9.9
 
 
+def test_create_bot_deposit_blocks_when_target_bot_wallet_missing(tmp_path: Path):
+    import pytest
+
+    from services.bot_side_service import create_bot_deposit
+
+    session_factory = _session_factory(tmp_path)
+    _seed_rows(session_factory)
+
+    session = session_factory()
+    try:
+        rows = list(session.exec(select(WalletAddress)).all())
+        for row in rows:
+            session.delete(row)
+        bot_two = BotInstance(
+            token="bot-side-token-wallet-missing-001",
+            name="Bot Without Wallet",
+            username="bot_no_wallet",
+            status=BotStatus.ACTIVE,
+            is_enabled=True,
+            is_platform_bot=False,
+            usdt_address="TRX_NO_WALLET",
+        )
+        session.add(bot_two)
+        session.commit()
+        session.refresh(bot_two)
+    finally:
+        session.close()
+
+    with pytest.raises(ValueError, match="wallet"):
+        create_bot_deposit(
+            user_id=1,
+            amount=9.9,
+            bot_id=int(bot_two.id or 0),
+            session_factory=session_factory,
+        )
+
+
+def test_create_bot_deposit_does_not_fallback_to_other_bot_wallet(tmp_path: Path):
+    import pytest
+
+    from services.bot_side_service import create_bot_deposit
+
+    session_factory = _session_factory(tmp_path)
+    _seed_rows(session_factory)
+
+    session = session_factory()
+    try:
+        bot_two = BotInstance(
+            token="bot-side-token-wallet-missing-002",
+            name="Bot Two Missing Wallet",
+            username="bot_two_no_wallet",
+            status=BotStatus.ACTIVE,
+            is_enabled=True,
+            is_platform_bot=False,
+            usdt_address="TRX_BOT_TWO_NO_WALLET",
+        )
+        session.add(bot_two)
+        session.commit()
+        session.refresh(bot_two)
+    finally:
+        session.close()
+
+    with pytest.raises(ValueError, match="wallet"):
+        create_bot_deposit(
+            user_id=1,
+            amount=9.9,
+            bot_id=int(bot_two.id or 0),
+            session_factory=session_factory,
+        )
+
+
+def test_create_bot_deposit_uses_wallet_address_of_requested_bot(tmp_path: Path):
+    from services.bot_side_service import create_bot_deposit
+
+    session_factory = _session_factory(tmp_path)
+    _seed_rows(session_factory)
+
+    session = session_factory()
+    try:
+        bot_two = BotInstance(
+            token="bot-side-token-wallet-present-002",
+            name="Bot Two With Wallet",
+            username="bot_two_wallet",
+            status=BotStatus.ACTIVE,
+            is_enabled=True,
+            is_platform_bot=False,
+            usdt_address="TRX_BOT_TWO",
+        )
+        session.add(bot_two)
+        session.commit()
+        session.refresh(bot_two)
+        session.add(
+            WalletAddress(
+                address="TRX_WALLET_BOT_2",
+                bot_id=int(bot_two.id or 0),
+                is_platform=False,
+                label="Bot Two Wallet",
+                status=WalletStatus.ACTIVE,
+                balance=0.0,
+                total_received=0.0,
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    dep1 = create_bot_deposit(
+        user_id=1,
+        amount=10,
+        bot_id=1,
+        session_factory=session_factory,
+    )
+    dep2 = create_bot_deposit(
+        user_id=1,
+        amount=11,
+        bot_id=2,
+        session_factory=session_factory,
+    )
+
+    assert dep1["to_address"] == "TRX_BOT_SIDE_WALLET"
+    assert dep2["to_address"] == "TRX_WALLET_BOT_2"
+
+
 def test_get_bot_deposit_sync_onchain_marks_completed_and_persists_tx_hash(tmp_path: Path, monkeypatch):
     from services import deposit_chain_service
     from services.bot_side_service import create_bot_deposit, get_bot_deposit

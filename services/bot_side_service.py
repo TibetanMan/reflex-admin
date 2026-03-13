@@ -11,6 +11,7 @@ from typing import Any, Callable, Optional
 from sqlmodel import Session, select
 
 from services.deposit_chain_service import sync_deposit_from_chain
+from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
 from shared.database import get_db_session
 from shared.models.balance_ledger import BalanceAction, BalanceLedger
 from shared.models.bin_info import BinInfo
@@ -1355,15 +1356,10 @@ def create_bot_deposit(
     try:
         user = _require_user(session, user_id=int(user_id))
         bot, _ = _resolve_bot_account(session, user=user, bot_id=bot_id)
-        wallet = session.exec(
-            select(WalletAddress).where(WalletAddress.bot_id == int(bot.id or 0)).order_by(WalletAddress.id.asc())
-        ).first()
-        if wallet is None:
-            wallet = session.exec(select(WalletAddress).order_by(WalletAddress.id.asc())).first()
-
-        to_address = str(wallet.address) if wallet is not None else str(bot.usdt_address or "-")
-        if not to_address.strip():
-            to_address = "-"
+        wallet = resolve_wallet_by_bot_or_raise(session, bot_id=int(bot.id or 0))
+        to_address = str(wallet.address).strip()
+        if not to_address:
+            raise ValueError("Current bot has no configured receiving wallet.")
 
         deposit = Deposit(
             deposit_no=_next_deposit_no(session),
