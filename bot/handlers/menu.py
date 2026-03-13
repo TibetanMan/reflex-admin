@@ -350,6 +350,28 @@ def _format_head_remaining_text(bins: list[str], available_counts: dict[str, Any
     return "\uFF0C".join([str(int(available_counts.get(bin_number) or 0)) for bin_number in bins])
 
 
+def _sanitize_filename_segment(value: str) -> str:
+    text = str(value or "").strip()
+    text = re.sub(r'[\\/:*?"<>|\r\n]+', "_", text)
+    text = re.sub(r"\s+", "", text)
+    return text or "库存库"
+
+
+def _build_purchase_delivery_file(
+    *,
+    library_name: str,
+    raw_items: list[str],
+    now: datetime | None = None,
+) -> tuple[str, str, int]:
+    lines = [str(item or "").strip() for item in raw_items if str(item or "").strip()]
+    line_count = len(lines)
+    local_now = now or (datetime.utcnow() + timedelta(hours=8))
+    date_text = local_now.strftime("%Y-%m-%d")
+    safe_library_name = _sanitize_filename_segment(library_name)
+    filename = f"{date_text}-{safe_library_name}-{line_count}.txt"
+    return filename, "\n".join(lines), line_count
+
+
 async def _try_shortcut_menu_from_state(message: Message, state: FSMContext) -> bool:
     text = str(message.text or "").strip()
     if text not in MAIN_MENU_BUTTONS:
@@ -626,22 +648,17 @@ async def handle_quantity_input(message: Message, state: FSMContext):
         )
         raw_items = list(purchase.get("raw_data_items") or [])
         if not raw_items:
-            await message.answer("当前订单暂无可展示数据。")
+            await message.answer("当前订单暂无可发送商品数据。")
             return
-        chunk: list[str] = []
-        size = 0
-        for line in raw_items:
-            value = str(line or "").strip()
-            if not value:
-                continue
-            if size + len(value) + 1 > 3200 and chunk:
-                await message.answer("\n".join(chunk))
-                chunk = []
-                size = 0
-            chunk.append(value)
-            size += len(value) + 1
-        if chunk:
-            await message.answer("\n".join(chunk))
+        filename, content, line_count = _build_purchase_delivery_file(
+            library_name=str(purchase.get("library_name") or "库存库"),
+            raw_items=raw_items,
+        )
+        document = BufferedInputFile(content.encode("utf-8"), filename=filename)
+        await message.answer_document(
+            document=document,
+            caption=f"📄 商品已打包为文本文件（共 {line_count} 条）",
+        )
     except Exception as exc:
         if "BALANCE_NOT_ENOUGH" in str(exc):
             await message.answer(_activation_text(), reply_markup=_recharge_open_keyboard())

@@ -109,25 +109,43 @@ def get_dashboard_snapshot(
                 }
             )
 
+        category_map = {int(item.id or 0): item for item in categories}
+        category_stats: dict[int, dict[str, int | str]] = {
+            cid: {"name": str(row.name), "sales": 0, "stock": 0}
+            for cid, row in category_map.items()
+            if cid > 0
+        }
+        for product in products:
+            cid = int(product.category_id or 0)
+            if cid <= 0:
+                continue
+            if cid not in category_stats:
+                category_stats[cid] = {"name": f"Category-{cid}", "sales": 0, "stock": 0}
+            status = _status_text(product.status)
+            if status == ProductStatus.SOLD.value:
+                category_stats[cid]["sales"] = int(category_stats[cid]["sales"]) + 1
+            elif status == ProductStatus.AVAILABLE.value:
+                category_stats[cid]["stock"] = int(category_stats[cid]["stock"]) + 1
+
         top_categories = sorted(
             [
                 {
-                    "name": str(item.name),
-                    "sales": int(item.sold_count or 0),
-                    "stock": int(item.product_count or 0),
+                    "name": str(row["name"]),
+                    "sales": int(row["sales"]),
+                    "stock": int(row["stock"]),
                     "progress": int(
                         0
-                        if int(item.product_count or 0) == 0
-                        else min(100, int((item.sold_count or 0) * 100 / (item.product_count or 1)))
+                        if int(row["sales"]) + int(row["stock"]) == 0
+                        else min(100, int(int(row["sales"]) * 100 / (int(row["sales"]) + int(row["stock"]))))
                     ),
                 }
-                for item in categories
+                for row in category_stats.values()
             ],
-            key=lambda row: row["sales"],
+            key=lambda row: (row["sales"], row["stock"], row["name"]),
             reverse=True,
         )[:5]
 
-        recent_orders = sorted(orders, key=lambda item: item.created_at, reverse=True)[:4]
+        recent_orders = sorted(orders, key=lambda item: item.created_at, reverse=True)[:10]
         recent_order_rows = [
             {
                 "id": str(item.order_no),

@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.wallet_config_sync import sync_default_wallet_from_settings
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
 from shared.models.admin_user import AdminUser
@@ -191,6 +192,7 @@ def update_default_usdt_address(
             payload={"value": address_text},
             operator_id=operator_id,
         )
+        sync_default_wallet_from_settings(session)
         _write_audit(
             session=session,
             operator_id=operator_id,

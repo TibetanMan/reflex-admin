@@ -11,8 +11,10 @@ from decimal import Decimal
 from hashlib import sha256
 from typing import Any
 
+from sqlalchemy import or_
 from sqlmodel import Session, select
 
+from shared.config import settings
 from shared.database import get_db_session, init_db
 from shared.schema_patch import apply_runtime_schema_patches
 from shared.models.admin_audit_log import AdminAuditLog
@@ -31,6 +33,7 @@ from shared.models.category import (
 from shared.models.deposit import Deposit, DepositMethod, DepositStatus
 from shared.models.inventory import (
     InventoryImportTask,
+    InventoryImportLineError,
     InventoryImportTaskStatus,
     InventoryLibrary,
     InventoryLibraryStatus,
@@ -60,6 +63,15 @@ _WEAK_PASSWORD_SET = {
     "12345678",
     "qwerty",
 }
+BOOTSTRAP_DEMO_DATA_ENABLED_ENV = "BOOTSTRAP_DEMO_DATA_ENABLED"
+BOOTSTRAP_PURGE_DEMO_DATA_ENV = "BOOTSTRAP_PURGE_DEMO_DATA"
+
+
+def _env_flag(name: str, *, default: bool = False) -> bool:
+    value = str(os.getenv(name) or "").strip().lower()
+    if not value:
+        return bool(default)
+    return value in {"1", "true", "yes", "on"}
 
 
 def _first_or_none(session: Session, model: Any):
@@ -85,6 +97,8 @@ def _is_weak_password(password: str) -> bool:
 
 def _resolve_startup_super_admin_password() -> str:
     password = str(os.getenv("SUPER_ADMIN_PASSWORD") or "").strip()
+    if not password:
+        password = str(getattr(settings, "super_admin_password", None) or "").strip()
     if _is_weak_password(password):
         raise SecurityPolicyError(
             "Invalid bootstrap password policy: SUPER_ADMIN_PASSWORD must be set to a strong non-default password."
@@ -160,7 +174,10 @@ def bootstrap_super_admin(
 
 
 def bootstrap_seed_if_empty(session: Session) -> dict[str, int]:
-    """Create minimal cross-module seed rows for empty DB environments."""
+    """Create optional demo seed rows for empty DB environments."""
+    if not _env_flag(BOOTSTRAP_DEMO_DATA_ENABLED_ENV, default=False):
+        return {}
+
     seeded: dict[str, int] = {}
 
     super_admin = session.exec(
@@ -559,6 +576,358 @@ def bootstrap_seed_if_empty(session: Session) -> dict[str, int]:
     return seeded
 
 
+def cleanup_bootstrap_demo_data(session: Session) -> dict[str, int]:
+    """Remove known bootstrap/demo records from historical environments."""
+    if not hasattr(session, "exec"):
+        return {}
+
+    removed: dict[str, int] = {}
+
+    def _delete_rows(rows: list[Any], key: str) -> int:
+        if not rows:
+            return 0
+        for row in rows:
+            session.delete(row)
+        removed[key] = removed.get(key, 0) + len(rows)
+        return len(rows)
+
+    with session.no_autoflush:
+        bot_rows = list(
+            session.exec(
+                select(BotInstance).where(
+                    or_(
+                        BotInstance.token == "bootstrap-main-bot-token",
+                        BotInstance.usdt_address == "TRX_MAIN_BOT",
+                        BotInstance.description == "Bootstrap platform bot",
+                    )
+                )
+            ).all()
+        )
+        bootstrap_bot_ids = {int(row.id or 0) for row in bot_rows if int(row.id or 0) > 0}
+
+        demo_users = list(
+            session.exec(
+                select(User).where(
+                    or_(
+                        User.telegram_id == 10000001,
+                        User.username == "demo_user",
+                        (User.first_name == "Demo") & (User.last_name == "User"),
+                    )
+                )
+            ).all()
+        )
+        demo_user_ids = {int(row.id or 0) for row in demo_users if int(row.id or 0) > 0}
+
+        merchant_rows = list(
+            session.exec(
+                select(Merchant).where(
+                    or_(
+                        Merchant.name == "Merchant One",
+                        Merchant.name.like("Archived Merchant %"),
+                        Merchant.contact_email == "merchant1@local.test",
+                        Merchant.contact_telegram == "@merchant_one",
+                        Merchant.usdt_address == "TRX_MERCHANT_ONE",
+                        Merchant.description == "Bootstrap merchant",
+                    )
+                )
+            ).all()
+        )
+        merchant_ids = {int(row.id or 0) for row in merchant_rows if int(row.id or 0) > 0}
+
+        inventory_rows = list(
+            session.exec(
+                select(InventoryLibrary).where(
+                    or_(
+                        InventoryLibrary.name == "Library A",
+                        InventoryLibrary.merchant_id.in_(merchant_ids) if merchant_ids else False,
+                    )
+                )
+            ).all()
+        )
+        inventory_ids = {int(row.id or 0) for row in inventory_rows if int(row.id or 0) > 0}
+
+        bootstrap_order_rows = list(
+            session.exec(
+                select(Order).where(
+                    or_(
+                        Order.order_no == "BOOTSTRAP-ORDER-0001",
+                        Order.bot_id.in_(bootstrap_bot_ids) if bootstrap_bot_ids else False,
+                        Order.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    )
+                )
+            ).all()
+        )
+        bootstrap_order_ids = {int(row.id or 0) for row in bootstrap_order_rows if int(row.id or 0) > 0}
+
+        bootstrap_product_rows = list(
+            session.exec(
+                select(ProductItem).where(
+                    or_(
+                        ProductItem.raw_data == "4111111111111111|12/30|123|US",
+                        ProductItem.inventory_library_id.in_(inventory_ids) if inventory_ids else False,
+                        ProductItem.supplier_id.in_(merchant_ids) if merchant_ids else False,
+                        ProductItem.sold_to_bot_id.in_(bootstrap_bot_ids) if bootstrap_bot_ids else False,
+                        ProductItem.sold_to_user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    )
+                )
+            ).all()
+        )
+        bootstrap_product_ids = {int(row.id or 0) for row in bootstrap_product_rows if int(row.id or 0) > 0}
+
+        push_task_rows = list(
+            session.exec(
+                select(PushMessageTask).where(PushMessageTask.dedup_key == "bootstrap-push-task-0001")
+            ).all()
+        )
+        push_task_ids = {int(row.id or 0) for row in push_task_rows if int(row.id or 0) > 0}
+        import_task_rows = list(
+            session.exec(
+                select(InventoryImportTask).where(
+                    or_(
+                        InventoryImportTask.source_filename == "bootstrap_inventory.txt",
+                        InventoryImportTask.library_id.in_(inventory_ids) if inventory_ids else False,
+                    )
+                )
+            ).all()
+        )
+        import_task_ids = {int(row.id or 0) for row in import_task_rows if int(row.id or 0) > 0}
+
+    _delete_rows(
+        list(
+            session.exec(
+                select(PushMessageAuditLog).where(
+                    or_(
+                        PushMessageAuditLog.action == "seeded",
+                        PushMessageAuditLog.related_id.in_(push_task_ids) if push_task_ids else False,
+                    )
+                )
+            ).all()
+        ),
+        "push_audits",
+    )
+    _delete_rows(push_task_rows, "push_tasks")
+    _delete_rows(
+        list(
+            session.exec(
+                select(PushReviewTask).where(
+                    or_(
+                        PushReviewTask.source == "bootstrap_seed",
+                        PushReviewTask.inventory_library_id.in_(inventory_ids) if inventory_ids else False,
+                        PushReviewTask.merchant_id.in_(merchant_ids) if merchant_ids else False,
+                        PushReviewTask.merchant_name == "Merchant One",
+                    )
+                )
+            ).all()
+        ),
+        "push_reviews",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(InventoryImportLineError).where(
+                    InventoryImportLineError.task_id.in_(import_task_ids)
+                )
+            ).all()
+        ),
+        "inventory_import_line_errors",
+    )
+    _delete_rows(
+        import_task_rows,
+        "inventory_import_tasks",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(ExportTask).where(
+                    or_(
+                        ExportTask.file_name == "bootstrap_orders.csv",
+                        ExportTask.file_path == "uploaded_files/exports/bootstrap_orders.csv",
+                    )
+                )
+            ).all()
+        ),
+        "export_tasks",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(AdminAuditLog).where(
+                    or_(
+                        AdminAuditLog.request_id == "bootstrap-seed-0001",
+                        AdminAuditLog.action == "bootstrap.seed",
+                    )
+                )
+            ).all()
+        ),
+        "admin_audits",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(BalanceLedger).where(
+                    or_(
+                        BalanceLedger.request_id == "bootstrap-credit-0001",
+                        BalanceLedger.remark == "Bootstrap credit",
+                        BalanceLedger.bot_id.in_(bootstrap_bot_ids) if bootstrap_bot_ids else False,
+                        BalanceLedger.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    )
+                )
+            ).all()
+        ),
+        "balance_ledgers",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(Deposit).where(
+                    or_(
+                        Deposit.deposit_no == "BOOTSTRAP-DEP-0001",
+                        Deposit.operator_remark == "Bootstrap seed deposit",
+                        Deposit.bot_id.in_(bootstrap_bot_ids) if bootstrap_bot_ids else False,
+                        Deposit.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    )
+                )
+            ).all()
+        ),
+        "deposits",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(OrderItem).where(
+                    or_(
+                        OrderItem.order_id.in_(bootstrap_order_ids) if bootstrap_order_ids else False,
+                        OrderItem.product_id.in_(bootstrap_product_ids) if bootstrap_product_ids else False,
+                    )
+                )
+            ).all()
+        ),
+        "order_items",
+    )
+    _delete_rows(bootstrap_order_rows, "orders")
+    _delete_rows(
+        list(
+            session.exec(
+                select(CartItem).where(
+                    or_(
+                        CartItem.bot_id.in_(bootstrap_bot_ids) if bootstrap_bot_ids else False,
+                        CartItem.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    )
+                )
+            ).all()
+        ),
+        "cart_items",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(UserBotSource).where(
+                    or_(
+                        UserBotSource.bot_id.in_(bootstrap_bot_ids) if bootstrap_bot_ids else False,
+                        UserBotSource.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    )
+                )
+            ).all()
+        ),
+        "user_bot_sources",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(BotUserAccount).where(
+                    or_(
+                        BotUserAccount.bot_id.in_(bootstrap_bot_ids) if bootstrap_bot_ids else False,
+                        BotUserAccount.user_id.in_(demo_user_ids) if demo_user_ids else False,
+                    )
+                )
+            ).all()
+        ),
+        "bot_user_accounts",
+    )
+    _delete_rows(
+        list(
+            session.exec(
+                select(WalletAddress).where(
+                    or_(
+                        WalletAddress.label == "Bootstrap Wallet",
+                        WalletAddress.address == "TRX_WALLET_BOOTSTRAP_001",
+                        WalletAddress.bot_id.in_(bootstrap_bot_ids) if bootstrap_bot_ids else False,
+                    )
+                )
+            ).all()
+        ),
+        "wallets",
+    )
+    _delete_rows(bootstrap_product_rows, "products")
+    _delete_rows(inventory_rows, "inventory_libraries")
+    _delete_rows(demo_users, "users")
+    _delete_rows(bot_rows, "bots")
+    agent_rows = list(
+        session.exec(
+            select(Agent).where(
+                or_(
+                    Agent.name == "Agent One",
+                    Agent.name.like("Archived Agent %"),
+                    Agent.contact_email == "agent1@local.test",
+                    Agent.contact_telegram == "@agent_one",
+                    Agent.usdt_address == "TRX_AGENT_ONE",
+                )
+            )
+        ).all()
+    )
+    _delete_rows(agent_rows, "agents")
+    _delete_rows(merchant_rows, "merchants")
+
+    admin_rows = list(
+        session.exec(
+            select(AdminUser).where(
+                or_(
+                    AdminUser.username == "agent1",
+                    AdminUser.username == "merchant1",
+                    AdminUser.username.like("archived_admin_%"),
+                    AdminUser.display_name == "Agent One",
+                    AdminUser.display_name == "Merchant One",
+                    AdminUser.display_name.like("Archived Admin %"),
+                )
+            )
+        ).all()
+    )
+    admin_ids = {int(row.id or 0) for row in admin_rows if int(row.id or 0) > 0}
+    if admin_ids:
+        for row in session.exec(select(Deposit).where(Deposit.operator_id.in_(admin_ids))).all():
+            row.operator_id = None
+            session.add(row)
+        for row in session.exec(select(BalanceLedger).where(BalanceLedger.operator_id.in_(admin_ids))).all():
+            row.operator_id = None
+            session.add(row)
+        for row in session.exec(select(InventoryImportTask).where(InventoryImportTask.operator_id.in_(admin_ids))).all():
+            row.operator_id = None
+            session.add(row)
+        for row in session.exec(select(PushReviewTask).where(PushReviewTask.reviewed_by.in_(admin_ids))).all():
+            row.reviewed_by = None
+            session.add(row)
+        for row in session.exec(select(ExportTask).where(ExportTask.operator_id.in_(admin_ids))).all():
+            row.operator_id = None
+            session.add(row)
+        for row in session.exec(select(SystemSetting).where(SystemSetting.updated_by.in_(admin_ids))).all():
+            row.updated_by = None
+            session.add(row)
+        _delete_rows(
+            list(session.exec(select(AdminAuditLog).where(AdminAuditLog.operator_id.in_(admin_ids))).all()),
+            "admin_audits_by_archived_admins",
+        )
+    _delete_rows(admin_rows, "admin_users")
+    _delete_rows(
+        list(
+            session.exec(
+                select(SystemSetting).where(SystemSetting.key == "bootstrap.ready")
+            ).all()
+        ),
+        "system_settings",
+    )
+    return removed
+
+
 def _pick_default_bot_id(session: Session) -> int:
     bots = list(session.exec(select(BotInstance).order_by(BotInstance.id.asc())).all())
     for row in bots:
@@ -698,6 +1067,8 @@ def run_startup_bootstrap() -> None:
         super_admin_password = _resolve_startup_super_admin_password()
         bootstrap_super_admin(session, password=super_admin_password)
         bootstrap_seed_if_empty(session)
+        if _env_flag(BOOTSTRAP_PURGE_DEMO_DATA_ENV, default=True):
+            cleanup_bootstrap_demo_data(session)
         bootstrap_bot_user_accounts(session)
         session.commit()
     except Exception:

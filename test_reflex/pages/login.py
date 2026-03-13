@@ -76,24 +76,6 @@ def login() -> rx.Component:
                         font_size="13px",
                     ),
                     
-                    # 测试账号提示
-                    rx.box(
-                        rx.vstack(
-                            rx.text("测试账号:", font_size="12px", font_weight="600", color=rx.color("accent", 11)),
-                            rx.text("admin / admin123", font_size="11px", color=rx.color("gray", 10)),
-                            rx.text("agent1 / agent123", font_size="11px", color=rx.color("gray", 10)),
-                            rx.text("merchant1 / merchant123", font_size="11px", color=rx.color("gray", 10)),
-                            spacing="0",
-                            align="center",
-                        ),
-                        padding="10px 16px",
-                        background=rx.color("accent", 3),
-                        border_radius="8px",
-                        margin_top="12px",
-                        margin_bottom="8px",
-                        border=f"1px solid {rx.color('accent', 6)}",
-                    ),
-                    
                     # 错误提示
                     rx.cond(
                         AuthState.error_message != "",
@@ -236,27 +218,6 @@ def login() -> rx.Component:
                             "border_radius": "8px",
                             "cursor": "pointer",
                         },
-                    ),
-                    
-                    # 分隔线
-                    rx.hstack(
-                        rx.box(flex="1", height="1px", background=rx.color("gray", 6)),
-                        rx.text("或", font_size="12px", color=rx.color("gray", 9), padding="0 12px"),
-                        rx.box(flex="1", height="1px", background=rx.color("gray", 6)),
-                        width="100%",
-                        margin_top="20px",
-                        align="center",
-                    ),
-                    
-                    # 其他登录方式
-                    rx.hstack(
-                        rx.icon_button(rx.icon("github", size=16), variant="outline", size="2", radius="full", color_scheme="gray", on_click=rx.toast.info("OAuth login is not enabled", duration=1500)),
-                        rx.icon_button(rx.icon("twitter", size=16), variant="outline", size="2", radius="full", color_scheme="gray", on_click=rx.toast.info("OAuth login is not enabled", duration=1500)),
-                        rx.icon_button(rx.icon("mail", size=16), variant="outline", size="2", radius="full", color_scheme="gray", on_click=rx.toast.info("OAuth login is not enabled", duration=1500)),
-                        spacing="3",
-                        margin_top="16px",
-                        justify="center",
-                        width="100%",
                     ),
                     
                     # 注册链接

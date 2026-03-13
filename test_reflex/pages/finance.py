@@ -1,4 +1,4 @@
-"""Finance management page."""
+"""财务管理页面。"""
 
 import reflex as rx
 
@@ -10,7 +10,7 @@ from ..templates import template
 
 
 def finance_stat_cards() -> rx.Component:
-    """Finance statistic cards."""
+    """财务统计卡片。"""
     return rx.grid(
         rx.box(
             rx.hstack(
@@ -21,7 +21,7 @@ def finance_stat_cards() -> rx.Component:
                     border_radius="12px",
                 ),
                 rx.vstack(
-                    rx.text("Today Deposits", size="2", color=rx.color("gray", 11)),
+                    rx.text("今日充值", size="2", color=rx.color("gray", 11)),
                     rx.text(
                         "$",
                         FinanceState.today_deposits.to(str),
@@ -46,7 +46,7 @@ def finance_stat_cards() -> rx.Component:
                     border_radius="12px",
                 ),
                 rx.vstack(
-                    rx.text("Wallet Balance", size="2", color=rx.color("gray", 11)),
+                    rx.text("钱包余额", size="2", color=rx.color("gray", 11)),
                     rx.text(
                         "$",
                         FinanceState.total_balance.to(str),
@@ -70,7 +70,7 @@ def finance_stat_cards() -> rx.Component:
                     border_radius="12px",
                 ),
                 rx.vstack(
-                    rx.text("Pending", size="2", color=rx.color("gray", 11)),
+                    rx.text("待确认", size="2", color=rx.color("gray", 11)),
                     rx.text(FinanceState.pending_deposits.to(str), size="6", weight="bold"),
                     align="end",
                     spacing="1",
@@ -89,7 +89,7 @@ def finance_stat_cards() -> rx.Component:
                     border_radius="12px",
                 ),
                 rx.vstack(
-                    rx.text("Total Deposited", size="2", color=rx.color("gray", 11)),
+                    rx.text("累计充值", size="2", color=rx.color("gray", 11)),
                     rx.text(
                         "$",
                         FinanceState.total_deposit_amount.to(str),
@@ -111,35 +111,35 @@ def finance_stat_cards() -> rx.Component:
 
 
 def manual_deposit_modal() -> rx.Component:
-    """Manual deposit dialog."""
+    """手动充值弹窗。"""
     return rx.dialog.root(
         rx.dialog.content(
-            rx.dialog.title("Manual Deposit"),
+            rx.dialog.title("手动充值"),
             rx.dialog.description(
-                "Add user balance manually.",
+                "为指定用户手动增加余额。",
                 size="2",
                 color=rx.color("gray", 11),
             ),
             rx.vstack(
-                rx.text("User ID", size="2", weight="medium"),
+                rx.text("用户标识", size="2", weight="medium"),
                 rx.input(
-                    placeholder="Telegram ID or username",
+                    placeholder="Telegram ID 或用户名",
                     value=FinanceState.manual_user_id,
                     on_change=FinanceState.set_manual_user_id,
                     width="100%",
                 ),
-                rx.text("Amount", size="2", weight="medium"),
+                rx.text("充值金额", size="2", weight="medium"),
                 rx.input(
-                    placeholder="USDT amount",
+                    placeholder="请输入 USDT 金额",
                     value=FinanceState.manual_amount,
                     on_change=FinanceState.set_manual_amount,
                     width="100%",
                     type="text",
                     input_mode="decimal",
                 ),
-                rx.text("Remark", size="2", weight="medium"),
+                rx.text("备注", size="2", weight="medium"),
                 rx.text_area(
-                    placeholder="Manual deposit remark",
+                    placeholder="请输入充值备注",
                     value=FinanceState.manual_remark,
                     on_change=FinanceState.set_manual_remark,
                     width="100%",
@@ -152,7 +152,7 @@ def manual_deposit_modal() -> rx.Component:
             rx.hstack(
                 rx.dialog.close(
                     rx.button(
-                        "Cancel",
+                        "取消",
                         variant="soft",
                         color_scheme="gray",
                         on_click=FinanceState.close_manual_deposit_modal,
@@ -160,7 +160,7 @@ def manual_deposit_modal() -> rx.Component:
                 ),
                 rx.spacer(),
                 rx.button(
-                    "Confirm",
+                    "确认充值",
                     on_click=FinanceState.process_manual_deposit(AuthState.username),
                 ),
                 width="100%",
@@ -174,20 +174,20 @@ def manual_deposit_modal() -> rx.Component:
 
 
 def deposit_status_badge(record: dict) -> rx.Component:
-    """Deposit status badge."""
+    """充值状态标记。"""
     return rx.match(
         record["status"],
-        ("completed", rx.badge("Completed", color_scheme="green")),
-        ("confirming", rx.badge("Confirming", color_scheme="orange")),
-        ("pending", rx.badge("Pending", color_scheme="blue")),
-        ("expired", rx.badge("Expired", color_scheme="gray")),
-        ("failed", rx.badge("Failed", color_scheme="red")),
-        rx.badge("Unknown", color_scheme="gray"),
+        ("completed", rx.badge("已完成", color_scheme="green")),
+        ("confirming", rx.badge("确认中", color_scheme="orange")),
+        ("pending", rx.badge("待处理", color_scheme="blue")),
+        ("expired", rx.badge("已过期", color_scheme="gray")),
+        ("failed", rx.badge("失败", color_scheme="red")),
+        rx.badge("未知", color_scheme="gray"),
     )
 
 
 def render_deposit_record_row(record: dict) -> rx.Component:
-    """Render one deposit row."""
+    """渲染单条充值记录。"""
     return rx.table.row(
         rx.table.cell(rx.code(record["deposit_no"], size="1")),
         rx.table.cell(rx.text(record["user"], size="2")),
@@ -213,7 +213,7 @@ def render_deposit_record_row(record: dict) -> rx.Component:
                         size="1",
                         on_click=lambda: FinanceState.copy_deposit_no(record["deposit_no"]),
                     ),
-                    content="Copy deposit number",
+                    content="复制充值单号",
                 ),
                 rx.cond(
                     record["tx_hash"],
@@ -224,7 +224,7 @@ def render_deposit_record_row(record: dict) -> rx.Component:
                             size="1",
                             on_click=lambda: FinanceState.open_tx_hash_link(record["tx_hash"]),
                         ),
-                        content="Open transaction",
+                        content="打开链上交易",
                     ),
                 ),
                 spacing="1",
@@ -234,11 +234,11 @@ def render_deposit_record_row(record: dict) -> rx.Component:
 
 
 def deposit_list_table() -> rx.Component:
-    """Deposit table bound to FinanceState."""
+    """充值记录表格。"""
     return rx.box(
         rx.hstack(
             rx.text(
-                f"Total {FinanceState.filtered_deposits.length()} rows",
+                f"共 {FinanceState.filtered_deposits.length()} 条记录",
                 size="2",
                 color=rx.color("gray", 11),
             ),
@@ -249,14 +249,14 @@ def deposit_list_table() -> rx.Component:
         rx.table.root(
             rx.table.header(
                 rx.table.row(
-                    rx.table.column_header_cell("Deposit No"),
-                    rx.table.column_header_cell("User"),
-                    rx.table.column_header_cell("Bot"),
-                    rx.table.column_header_cell("Amount"),
-                    rx.table.column_header_cell("Method"),
-                    rx.table.column_header_cell("Status"),
-                    rx.table.column_header_cell("Time"),
-                    rx.table.column_header_cell("Action"),
+                    rx.table.column_header_cell("充值单号"),
+                    rx.table.column_header_cell("用户"),
+                    rx.table.column_header_cell("机器人"),
+                    rx.table.column_header_cell("金额"),
+                    rx.table.column_header_cell("方式"),
+                    rx.table.column_header_cell("状态"),
+                    rx.table.column_header_cell("时间"),
+                    rx.table.column_header_cell("操作"),
                 ),
             ),
             rx.table.body(
@@ -265,7 +265,7 @@ def deposit_list_table() -> rx.Component:
                     rx.foreach(FinanceState.filtered_deposits, render_deposit_record_row),
                     rx.table.row(
                         rx.table.cell(
-                            rx.text("No deposit records", size="2", color=rx.color("gray", 10)),
+                            rx.text("暂无充值记录", size="2", color=rx.color("gray", 10)),
                             col_span=8,
                             text_align="center",
                         ),
@@ -280,7 +280,7 @@ def deposit_list_table() -> rx.Component:
 
 
 def render_wallet_card(wallet: dict) -> rx.Component:
-    """Render one wallet card."""
+    """渲染钱包卡片。"""
     return rx.box(
         rx.hstack(
             rx.box(
@@ -300,7 +300,7 @@ def render_wallet_card(wallet: dict) -> rx.Component:
                             size="1",
                             on_click=lambda: FinanceState.copy_wallet_address(wallet["address"]),
                         ),
-                        content="Copy address",
+                        content="复制地址",
                     ),
                     spacing="1",
                 ),
@@ -329,9 +329,9 @@ def render_wallet_card(wallet: dict) -> rx.Component:
 
 
 def wallet_list() -> rx.Component:
-    """Wallet cards bound to FinanceState."""
+    """钱包列表。"""
     return rx.box(
-        rx.text("Wallet Addresses", size="4", weight="bold", margin_bottom="16px"),
+        rx.text("钱包地址", size="4", weight="bold", margin_bottom="16px"),
         rx.vstack(
             rx.foreach(FinanceState.wallets, render_wallet_card),
             spacing="3",
@@ -342,12 +342,12 @@ def wallet_list() -> rx.Component:
 
 @template
 def finance_page() -> rx.Component:
-    """Finance page."""
+    """财务页面。"""
     return rx.box(
         rx.hstack(
             rx.vstack(
-                rx.heading("Finance Center", size="6"),
-                rx.text("Deposit records and wallet management", color=rx.color("gray", 11)),
+                rx.heading("财务中心", size="6"),
+                rx.text("管理充值记录、链上同步与钱包地址", color=rx.color("gray", 11)),
                 align="start",
                 spacing="1",
             ),
@@ -355,19 +355,19 @@ def finance_page() -> rx.Component:
             rx.hstack(
                 rx.button(
                     rx.icon("download", size=16),
-                    "Export Report",
+                    "导出报表",
                     variant="outline",
                     on_click=FinanceState.export_finance_report_csv,
                 ),
                 rx.button(
                     rx.icon("link-2", size=16),
-                    "Sync On-chain",
+                    "同步链上",
                     variant="soft",
                     on_click=FinanceState.sync_onchain_deposits,
                 ),
                 rx.button(
                     rx.icon("plus", size=16),
-                    "Manual Deposit",
+                    "手动充值",
                     on_click=with_focus_blur(FinanceState.open_manual_deposit_modal),
                 ),
                 spacing="2",
@@ -379,11 +379,11 @@ def finance_page() -> rx.Component:
         rx.box(height="24px"),
         rx.grid(
             rx.box(
-                rx.text("Deposit Records", size="4", weight="bold", margin_bottom="16px"),
+                rx.text("充值记录", size="4", weight="bold", margin_bottom="16px"),
                 rx.box(
                     rx.hstack(
                         rx.input(
-                            placeholder="Search user / deposit / bot ...",
+                            placeholder="搜索用户 / 充值单号 / 机器人...",
                             value=FinanceState.search_query,
                             on_change=FinanceState.set_search_query,
                             width="240px",

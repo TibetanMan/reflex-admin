@@ -10,6 +10,7 @@ from sqlmodel import Session, select
 
 from services.deposit_chain_service import sync_pending_usdt_deposits
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
+from services.wallet_config_sync import sync_wallets_from_config
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
 from shared.models.admin_user import AdminUser
@@ -102,6 +103,8 @@ def list_finance_wallets(
     make_session = session_factory or get_db_session
     session = make_session()
     try:
+        if sync_wallets_from_config(session):
+            session.commit()
         wallets = list(session.exec(select(WalletAddress).order_by(WalletAddress.id.desc())).all())
         bot_map = {int(item.id or 0): item for item in session.exec(select(BotInstance)).all()}
 

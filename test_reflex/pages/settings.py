@@ -2,6 +2,7 @@
 
 import reflex as rx
 
+from services.admin_account_api import create_admin_account
 from services.settings_api import (
     get_settings_snapshot,
     update_bins_query_api_settings,
@@ -40,6 +41,15 @@ class SettingsState(rx.State):
     telegram_push_interval_seconds: int = 5
     telegram_max_messages_per_minute: int = 30
     telegram_retry_times: int = 3
+
+    # Admin account create form (super-admin only).
+    new_admin_username: str = ""
+    new_admin_display_name: str = ""
+    new_admin_email: str = ""
+    new_admin_role: str = "agent"
+    new_admin_initial_password: str = ""
+    created_admin_username: str = ""
+    created_admin_initial_password: str = ""
 
     def load_settings_data(self):
         data = get_settings_snapshot()
@@ -207,6 +217,69 @@ class SettingsState(rx.State):
             operator_username=operator_username_value,
         )
         return rx.toast.success("Telegram 推送配置已保存", duration=1800)
+
+    def set_new_admin_username(self, value: str):
+        self.new_admin_username = value
+
+    def set_new_admin_display_name(self, value: str):
+        self.new_admin_display_name = value
+
+    def set_new_admin_email(self, value: str):
+        self.new_admin_email = value
+
+    def set_new_admin_role(self, value: str):
+        role_text = str(value or "").strip().lower()
+        if role_text not in {"super_admin", "agent", "merchant"}:
+            return
+        self.new_admin_role = role_text
+
+    def set_new_admin_initial_password(self, value: str):
+        self.new_admin_initial_password = value
+
+    def create_admin_account(self, actor_username: str = ""):
+        actor_username_value = str(actor_username or "").strip()
+        if not actor_username_value:
+            return rx.toast.error("当前登录信息失效，请重新登录后重试", duration=2000)
+
+        username_text = self.new_admin_username.strip()
+        display_name_text = self.new_admin_display_name.strip()
+        if not username_text:
+            return rx.toast.error("管理员用户名不能为空", duration=1800)
+        if not display_name_text:
+            return rx.toast.error("管理员显示名称不能为空", duration=1800)
+
+        try:
+            payload = create_admin_account(
+                actor_username=actor_username_value,
+                username=username_text,
+                display_name=display_name_text,
+                role=self.new_admin_role,
+                email=self.new_admin_email.strip(),
+                initial_password=self.new_admin_initial_password,
+            )
+        except (ValueError, PermissionError) as exc:
+            return rx.toast.error(str(exc), duration=2400)
+
+        self.created_admin_username = str(payload.get("username") or username_text)
+        self.created_admin_initial_password = str(payload.get("initial_password") or "")
+        self.new_admin_username = ""
+        self.new_admin_display_name = ""
+        self.new_admin_email = ""
+        self.new_admin_role = "agent"
+        self.new_admin_initial_password = ""
+
+        if self.created_admin_initial_password:
+            return [
+                rx.set_clipboard(self.created_admin_initial_password),
+                rx.toast.success(
+                    f"管理员账户 {self.created_admin_username} 已创建，初始密码已复制",
+                    duration=2600,
+                ),
+            ]
+        return rx.toast.success(
+            f"管理员账户 {self.created_admin_username} 已创建",
+            duration=2200,
+        )
 
 
 def section_card(
@@ -434,6 +507,88 @@ def telegram_push_section() -> rx.Component:
     )
 
 
+def admin_account_section() -> rx.Component:
+    return section_card(
+        "开设管理员账户",
+        "仅超级管理员可创建后台管理员账号，创建后自动返回安全初始密码。",
+        "user-plus",
+        "amber",
+        "受控操作",
+        rx.cond(
+            AuthState.is_super_admin,
+            rx.vstack(
+                rx.grid(
+                    rx.input(
+                        value=SettingsState.new_admin_username,
+                        on_change=SettingsState.set_new_admin_username,
+                        placeholder="管理员用户名（必填）",
+                        width="100%",
+                    ),
+                    rx.input(
+                        value=SettingsState.new_admin_display_name,
+                        on_change=SettingsState.set_new_admin_display_name,
+                        placeholder="显示名称（必填）",
+                        width="100%",
+                    ),
+                    columns="2",
+                    spacing="3",
+                    width="100%",
+                ),
+                rx.grid(
+                    rx.input(
+                        value=SettingsState.new_admin_email,
+                        on_change=SettingsState.set_new_admin_email,
+                        placeholder="联系邮箱（选填）",
+                        width="100%",
+                    ),
+                    rx.select(
+                        ["super_admin", "agent", "merchant"],
+                        value=SettingsState.new_admin_role,
+                        on_change=SettingsState.set_new_admin_role,
+                        width="100%",
+                    ),
+                    columns="2",
+                    spacing="3",
+                    width="100%",
+                ),
+                rx.input(
+                    value=SettingsState.new_admin_initial_password,
+                    on_change=SettingsState.set_new_admin_initial_password,
+                    placeholder="初始密码（选填，留空自动生成强密码）",
+                    type="password",
+                    width="100%",
+                ),
+                rx.button(
+                    "创建管理员账户",
+                    on_click=SettingsState.create_admin_account(AuthState.username),
+                ),
+                rx.cond(
+                    SettingsState.created_admin_username != "",
+                    rx.callout(
+                        rx.text(
+                            "最近创建账户: ",
+                            SettingsState.created_admin_username,
+                            "。初始密码已自动复制，请尽快安全交付并要求首次登录立即修改密码。",
+                        ),
+                        icon="shield-check",
+                        color_scheme="green",
+                        width="100%",
+                    ),
+                ),
+                spacing="2",
+                align="start",
+                width="100%",
+            ),
+            rx.callout(
+                "仅超级管理员可执行开设管理员账户操作。",
+                icon="shield-alert",
+                color_scheme="orange",
+                width="100%",
+            ),
+        ),
+    )
+
+
 def default_usdt_confirm_modal() -> rx.Component:
     return rx.alert_dialog.root(
         rx.alert_dialog.content(
@@ -480,13 +635,14 @@ def settings() -> rx.Component:
     return rx.vstack(
         page_header(
             title="系统设置",
-            subtitle="统一管理默认收款地址、查询接口与 Telegram 推送策略。",
+            subtitle="统一管理默认收款地址、查询接口、推送策略与管理员账号开设。",
         ),
         rx.box(
             default_usdt_address_section(),
             usdt_query_api_section(),
             bins_query_api_section(),
             telegram_push_section(),
+            admin_account_section(),
             width="100%",
             display="grid",
             gap="16px",

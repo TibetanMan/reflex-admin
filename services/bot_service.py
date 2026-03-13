@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.wallet_config_sync import sync_bot_wallet_from_address
 from shared.database import get_db_session
 from shared.models.agent import Agent
 from shared.models.balance_ledger import BalanceLedger
@@ -306,6 +307,8 @@ def create_bot_record(
             updated_at=datetime.now(timezone.utc).replace(tzinfo=None),
         )
         session.add(bot)
+        session.flush()
+        sync_bot_wallet_from_address(session, bot=bot)
         session.commit()
         session.refresh(bot)
     except Exception:
@@ -347,6 +350,8 @@ def update_bot_record(
         bot.usdt_address = str(usdt_address or "").strip() or None
         bot.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         session.add(bot)
+        session.flush()
+        sync_bot_wallet_from_address(session, bot=bot)
         session.commit()
         session.refresh(bot)
     except Exception:

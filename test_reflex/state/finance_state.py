@@ -19,9 +19,9 @@ from services.finance_api import (
 
 
 STATUS_LABEL_TO_CODE = {
-    "All Status": "",
-    "Completed": "completed",
-    "Confirming": "confirming",
+    "全部状态": "",
+    "已完成": "completed",
+    "确认中": "confirming",
 }
 
 
@@ -32,7 +32,7 @@ class FinanceState(rx.State):
     wallets: List[Dict[str, Any]] = []
 
     search_query: str = ""
-    filter_status: str = "All Status"
+    filter_status: str = "全部状态"
     filter_method: str = ""
 
     show_manual_deposit_modal: bool = False
@@ -66,7 +66,7 @@ class FinanceState(rx.State):
     def refresh_list(self):
         return [
             type(self).load_finance_data,
-            rx.toast.info("Finance records refreshed", duration=1500),
+            rx.toast.info("财务数据已刷新", duration=1500),
         ]
 
     def sync_onchain_deposits(self):
@@ -75,16 +75,16 @@ class FinanceState(rx.State):
         updated = int(summary.get("updated") or 0)
         completed = int(summary.get("completed") or 0)
         if updated <= 0:
-            return rx.toast.info("No on-chain status updates", duration=1800)
+            return rx.toast.info("链上状态无更新", duration=1800)
         return rx.toast.success(
-            f"On-chain sync done: {updated} updated, {completed} completed",
+            f"链上同步完成：更新 {updated} 条，完成 {completed} 条",
             duration=2200,
         )
 
     def export_finance_report_csv(self):
         rows = list(self.filtered_deposits)
         if not rows:
-            return rx.toast.info("No deposit rows available for export", duration=1800)
+            return rx.toast.info("暂无可导出的充值记录", duration=1800)
 
         columns = [
             "deposit_no",
@@ -102,7 +102,7 @@ class FinanceState(rx.State):
         for row in rows:
             writer.writerow({column: str(row.get(column) or "") for column in columns})
 
-        file_name = f"finance_report_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        file_name = f"财务报表_{datetime.now():%Y%m%d_%H%M%S}.csv"
         return rx.download(
             data=output.getvalue().encode("utf-8-sig"),
             filename=file_name,
@@ -134,25 +134,25 @@ class FinanceState(rx.State):
     def copy_wallet_address(self, address: str):
         value = str(address).strip()
         if not value:
-            return rx.toast.error("Address is empty", duration=1500)
+            return rx.toast.error("地址为空，无法复制", duration=1500)
         return [
             rx.set_clipboard(value),
-            rx.toast.success("Address copied", duration=1500),
+            rx.toast.success("地址已复制", duration=1500),
         ]
 
     def copy_deposit_no(self, deposit_no: str):
         value = str(deposit_no).strip()
         if not value:
-            return rx.toast.error("Deposit number is empty", duration=1500)
+            return rx.toast.error("充值单号为空，无法复制", duration=1500)
         return [
             rx.set_clipboard(value),
-            rx.toast.success("Deposit number copied", duration=1500),
+            rx.toast.success("充值单号已复制", duration=1500),
         ]
 
     def open_tx_hash_link(self, tx_hash: str):
         value = str(tx_hash).strip()
         if not value:
-            return rx.toast.error("Transaction hash is empty", duration=1500)
+            return rx.toast.error("交易哈希为空，无法打开", duration=1500)
         safe_value = value.replace("'", "").replace('"', "")
         return rx.call_script(
             f"window.open('https://tronscan.org/#/transaction/{safe_value}', '_blank')"
@@ -166,9 +166,9 @@ class FinanceState(rx.State):
         amount = self._parse_amount(amount_text)
 
         if not user_text:
-            return rx.toast.error("Please input user id", duration=2000)
+            return rx.toast.error("请输入用户标识", duration=2000)
         if amount is None:
-            return rx.toast.error("Amount must be greater than 0 with up to 2 decimals", duration=2500)
+            return rx.toast.error("金额必须大于 0，且最多保留 2 位小数", duration=2500)
 
         try:
             create_manual_deposit(
@@ -182,7 +182,7 @@ class FinanceState(rx.State):
 
         self.load_finance_data()
         self.close_manual_deposit_modal()
-        return rx.toast.success("Manual deposit created", duration=2200)
+        return rx.toast.success("手动充值已创建", duration=2200)
 
     @rx.var
     def status_options(self) -> List[str]:
