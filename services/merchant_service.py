@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import secrets
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
@@ -11,6 +12,10 @@ from sqlmodel import Session, select
 from shared.database import get_db_session
 from shared.models.admin_user import AdminRole, AdminUser
 from shared.models.merchant import Merchant
+
+
+def _generate_secure_temp_password() -> str:
+    return f"Merchant-{secrets.token_urlsafe(12)}-A1!"
 
 
 def _format_fee(rate: float) -> str:
@@ -114,7 +119,7 @@ def create_merchant_record(
             is_active=True,
             is_verified=True,
         )
-        admin.set_password("merchant123")
+        admin.set_password(_generate_secure_temp_password())
         session.add(admin)
         session.commit()
         session.refresh(admin)

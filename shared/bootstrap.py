@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
+import re
+import secrets
 from datetime import datetime, timezone
 from decimal import Decimal
 from hashlib import sha256
@@ -41,15 +44,57 @@ from shared.models.system_setting import SystemSetting
 from shared.models.user import User
 from shared.models.user_export import ExportTask, ExportTaskStatus, ExportTaskType, UserBotSource
 from shared.models.wallet import WalletAddress, WalletStatus
+from services.security_errors import SecurityPolicyError
 
 
 DEFAULT_SUPER_ADMIN_USERNAME = "admin"
-DEFAULT_SUPER_ADMIN_PASSWORD = "admin123"
+DEFAULT_SUPER_ADMIN_PASSWORD = ""
 DEFAULT_SUPER_ADMIN_DISPLAY_NAME = "Super Admin"
+_WEAK_PASSWORD_SET = {
+    "",
+    "admin123",
+    "agent123",
+    "merchant123",
+    "password",
+    "123456",
+    "12345678",
+    "qwerty",
+}
 
 
 def _first_or_none(session: Session, model: Any):
     return session.exec(select(model)).first()
+
+
+def _is_weak_password(password: str) -> bool:
+    text = str(password or "")
+    if text.lower() in _WEAK_PASSWORD_SET:
+        return True
+    if len(text) < 12:
+        return True
+    if re.search(r"[a-z]", text) is None:
+        return True
+    if re.search(r"[A-Z]", text) is None:
+        return True
+    if re.search(r"\d", text) is None:
+        return True
+    if re.search(r"[^A-Za-z0-9]", text) is None:
+        return True
+    return False
+
+
+def _resolve_startup_super_admin_password() -> str:
+    password = str(os.getenv("SUPER_ADMIN_PASSWORD") or "").strip()
+    if _is_weak_password(password):
+        raise SecurityPolicyError(
+            "Invalid bootstrap password policy: SUPER_ADMIN_PASSWORD must be set to a strong non-default password."
+        )
+    return password
+
+
+def _generate_secure_password(prefix: str) -> str:
+    token = secrets.token_urlsafe(12)
+    return f"{prefix}-{token}-A1!"
 
 
 def _ensure_admin_user(
@@ -103,6 +148,8 @@ def bootstrap_super_admin(
     display_name: str = DEFAULT_SUPER_ADMIN_DISPLAY_NAME,
 ) -> tuple[AdminUser, bool]:
     """Ensure default super admin exists and is active."""
+    if _is_weak_password(password):
+        raise SecurityPolicyError("Bootstrap super admin password is weak or default.")
     return _ensure_admin_user(
         session,
         username=username,
@@ -116,18 +163,25 @@ def bootstrap_seed_if_empty(session: Session) -> dict[str, int]:
     """Create minimal cross-module seed rows for empty DB environments."""
     seeded: dict[str, int] = {}
 
-    super_admin, _ = bootstrap_super_admin(session)
+    super_admin = session.exec(
+        select(AdminUser)
+        .where(AdminUser.role == AdminRole.SUPER_ADMIN)
+        .order_by(AdminUser.id.asc())
+    ).first()
+    if super_admin is None:
+        raise SecurityPolicyError("Super admin must exist before seed bootstrap runs.")
+
     agent_admin, _ = _ensure_admin_user(
         session,
         username="agent1",
-        password="agent123",
+        password=_generate_secure_password("agent"),
         role=AdminRole.AGENT,
         display_name="Agent One",
     )
     merchant_admin, _ = _ensure_admin_user(
         session,
         username="merchant1",
-        password="merchant123",
+        password=_generate_secure_password("merchant"),
         role=AdminRole.MERCHANT,
         display_name="Merchant One",
     )
@@ -641,7 +695,8 @@ def run_startup_bootstrap() -> None:
     apply_runtime_schema_patches()
     session = get_db_session()
     try:
-        bootstrap_super_admin(session)
+        super_admin_password = _resolve_startup_super_admin_password()
+        bootstrap_super_admin(session, password=super_admin_password)
         bootstrap_seed_if_empty(session)
         bootstrap_bot_user_accounts(session)
         session.commit()

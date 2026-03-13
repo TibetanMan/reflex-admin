@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import secrets
 import re
 from datetime import datetime, timezone
 from typing import Any, Callable, Optional
@@ -12,6 +13,10 @@ from shared.database import get_db_session
 from shared.models.admin_user import AdminRole, AdminUser
 from shared.models.agent import Agent
 from shared.models.bot_instance import BotInstance, BotStatus
+
+
+def _generate_secure_temp_password() -> str:
+    return f"Agent-{secrets.token_urlsafe(12)}-A1!"
 
 
 def _mask_token(token: str) -> str:
@@ -131,7 +136,7 @@ def create_agent_with_bot(
             is_active=True,
             is_verified=True,
         )
-        admin.set_password("agent123")
+        admin.set_password(_generate_secure_temp_password())
         session.add(admin)
         session.commit()
         session.refresh(admin)

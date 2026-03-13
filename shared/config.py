@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     
     # 瀹夊叏閰嶇疆
     secret_key: str = "your-secret-key-change-in-production"
+    super_admin_password: Optional[str] = None
     access_token_expire_minutes: int = 60 * 24  # 24 hours
     
     # 鍒嗛〉閰嶇疆
