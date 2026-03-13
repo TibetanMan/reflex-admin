@@ -9,6 +9,7 @@ temp_decompile/
 uploaded_files/
 .agent/
 .claude/
+docs/
 # Python-generated files
 __pycache__/
 *.py[oc]
