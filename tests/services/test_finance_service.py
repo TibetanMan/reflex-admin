@@ -5,11 +5,15 @@ from decimal import Decimal
 from sqlmodel import SQLModel, Session, create_engine, select
 
 from services.agent_campaign_service import upsert_agent_campaign_config
+from services.agent_campaign_reward_service import apply_agent_campaign_reward_for_deposit
 from services.finance_service import create_manual_deposit
+from services.user_service import list_users_snapshot
 from shared.models.admin_user import AdminRole, AdminUser
 from shared.models.agent import Agent
+from shared.models.agent_campaign import CampaignRewardGrant
 from shared.models.balance_ledger import BalanceAction, BalanceLedger
 from shared.models.bot_instance import BotInstance, BotStatus
+from shared.models.bot_user_account import BotUserAccount
 from shared.models.user import User
 from shared.models.wallet import WalletAddress, WalletStatus
 
@@ -114,13 +118,45 @@ def test_create_manual_deposit_applies_agent_campaign_bonus(tmp_path):
     session = session_factory()
     try:
         user = session.exec(select(User).where(User.telegram_id == 123456789)).first()
+        account = session.exec(
+            select(BotUserAccount).where(BotUserAccount.user_id == int(user.id or 0))
+        ).first()
+        grants = list(session.exec(select(CampaignRewardGrant)).all())
         bonus_ledger = session.exec(
             select(BalanceLedger).where(BalanceLedger.action == BalanceAction.CAMPAIGN_BONUS)
         ).first()
     finally:
         session.close()
+    snapshots = list_users_snapshot(session_factory=session_factory)
+    snapshot = next(item for item in snapshots if str(item["telegram_id"]) == "123456789")
 
     assert payload["status"] == "completed"
     assert float(user.balance) == 40.50
     assert float(user.total_deposit) == 25.50
+    assert float(account.balance) == 40.50
+    assert float(account.total_deposit) == 25.50
+    assert float(user.balance) == float(account.balance)
+    assert float(user.total_deposit) == float(account.total_deposit)
+    assert float(snapshot["balance"]) == 40.50
+    assert float(snapshot["total_deposit"]) == 25.50
+    assert len(grants) == 1
     assert bonus_ledger is not None
+
+    second = apply_agent_campaign_reward_for_deposit(
+        deposit_id=int(payload["id"] or 0),
+        session_factory=session_factory,
+    )
+
+    session = session_factory()
+    try:
+        grant_rows = list(session.exec(select(CampaignRewardGrant)).all())
+        bonus_ledgers = list(
+            session.exec(select(BalanceLedger).where(BalanceLedger.action == BalanceAction.CAMPAIGN_BONUS)).all()
+        )
+    finally:
+        session.close()
+
+    assert second["granted"] is False
+    assert second["reason"] == "already_granted"
+    assert len(grant_rows) == 1
+    assert len(bonus_ledgers) == 1

@@ -129,6 +129,14 @@ def _sync_user_aggregate_from_accounts(session: Session, *, user: User) -> None:
     session.add(user)
 
 
+def ensure_bot_account(session: Session, *, user: User, bot: BotInstance) -> BotUserAccount:
+    return _ensure_bot_account(session, user=user, bot=bot)
+
+
+def sync_user_aggregate_from_accounts(session: Session, *, user: User) -> None:
+    _sync_user_aggregate_from_accounts(session, user=user)
+
+
 def _ordered_bot_ids(
     *,
     source_rows_for_user: list[UserBotSource],

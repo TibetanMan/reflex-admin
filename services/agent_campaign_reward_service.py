@@ -6,14 +6,15 @@ from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable, Optional
 
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from services.agent_campaign_service import campaign_status_text
+from services.user_service import ensure_bot_account, sync_user_aggregate_from_accounts
 from shared.database import get_db_session
 from shared.models.agent_campaign import AgentCampaignConfig, CampaignRewardGrant
 from shared.models.balance_ledger import BalanceAction, BalanceLedger
 from shared.models.bot_instance import BotInstance
-from shared.models.bot_user_account import BotUserAccount
 from shared.models.deposit import Deposit, DepositStatus
 from shared.models.user import User
 
@@ -28,31 +29,6 @@ def _status_text(value: Any) -> str:
 
 def _money(value: Decimal | float | int | str) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-
-
-def _ensure_bot_account(session: Session, *, user_id: int, bot_id: int) -> BotUserAccount:
-    account = session.exec(
-        select(BotUserAccount)
-        .where(BotUserAccount.user_id == int(user_id))
-        .where(BotUserAccount.bot_id == int(bot_id))
-    ).first()
-    if account is not None:
-        return account
-
-    account = BotUserAccount(
-        user_id=int(user_id),
-        bot_id=int(bot_id),
-        balance=_money(0),
-        total_deposit=_money(0),
-        total_spent=_money(0),
-        order_count=0,
-        created_at=_now(),
-        updated_at=_now(),
-        last_active_at=_now(),
-    )
-    session.add(account)
-    session.flush()
-    return account
 
 
 def _active_campaign_for_bot(
@@ -99,7 +75,11 @@ def apply_agent_campaign_reward_for_deposit(
             .where(CampaignRewardGrant.bot_id == int(deposit.bot_id))
             .where(CampaignRewardGrant.grant_type == "first_deposit")
         ).first()
-        if existing is not None:
+        request_id = f"campaign-bonus-{int(deposit.id or 0)}"
+        existing_ledger = current_session.exec(
+            select(BalanceLedger).where(BalanceLedger.request_id == request_id)
+        ).first()
+        if existing is not None or existing_ledger is not None:
             return {"granted": False, "reason": "already_granted"}
 
         first_completed = current_session.exec(
@@ -122,50 +102,68 @@ def apply_agent_campaign_reward_for_deposit(
         user = current_session.exec(select(User).where(User.id == int(deposit.user_id))).first()
         if user is None:
             return {"granted": False, "reason": "user_not_found"}
+        bot = current_session.exec(select(BotInstance).where(BotInstance.id == int(deposit.bot_id))).first()
+        if bot is None:
+            return {"granted": False, "reason": "campaign_inactive"}
 
-        account = _ensure_bot_account(
-            current_session,
-            user_id=int(user.id or 0),
-            bot_id=int(deposit.bot_id),
-        )
+        try:
+            with current_session.begin_nested():
+                account = ensure_bot_account(
+                    current_session,
+                    user=user,
+                    bot=bot,
+                )
 
-        before_balance = _money(account.balance or 0)
-        after_balance = _money(before_balance + bonus_amount)
-        account.balance = after_balance
-        account.updated_at = _now()
-        account.last_active_at = _now()
-        current_session.add(account)
+                before_balance = _money(account.balance or 0)
+                after_balance = _money(before_balance + bonus_amount)
+                account.balance = after_balance
+                account.updated_at = _now()
+                account.last_active_at = _now()
+                current_session.add(account)
+                sync_user_aggregate_from_accounts(current_session, user=user)
 
-        user.balance = _money(user.balance or 0) + bonus_amount
-        user.updated_at = _now()
-        current_session.add(user)
+                current_session.add(
+                    CampaignRewardGrant(
+                        campaign_config_id=int(campaign.id or 0),
+                        user_id=int(user.id or 0),
+                        bot_id=int(deposit.bot_id),
+                        grant_type="first_deposit",
+                        reward_amount=bonus_amount,
+                        granted_at=_now(),
+                        operator_id=None,
+                        remark=f"deposit_id={int(deposit.id or 0)}",
+                    )
+                )
 
-        current_session.add(
-            CampaignRewardGrant(
-                campaign_config_id=int(campaign.id or 0),
-                user_id=int(user.id or 0),
-                bot_id=int(deposit.bot_id),
-                grant_type="first_deposit",
-                reward_amount=bonus_amount,
-                granted_at=_now(),
-                operator_id=None,
-                remark=f"deposit_id={int(deposit.id or 0)}",
-            )
-        )
-
-        current_session.add(
-            BalanceLedger(
-                user_id=int(user.id or 0),
-                bot_id=int(deposit.bot_id),
-                action=BalanceAction.CAMPAIGN_BONUS,
-                amount=bonus_amount,
-                before_balance=before_balance,
-                after_balance=after_balance,
-                operator_id=None,
-                remark="agent_campaign_first_deposit_bonus",
-                request_id=f"campaign-bonus-{int(deposit.id or 0)}",
-            )
-        )
+                current_session.add(
+                    BalanceLedger(
+                        user_id=int(user.id or 0),
+                        bot_id=int(deposit.bot_id),
+                        action=BalanceAction.CAMPAIGN_BONUS,
+                        amount=bonus_amount,
+                        before_balance=before_balance,
+                        after_balance=after_balance,
+                        operator_id=None,
+                        remark="agent_campaign_first_deposit_bonus",
+                        request_id=request_id,
+                    )
+                )
+                current_session.flush()
+        except IntegrityError:
+            duplicate_grant = current_session.exec(
+                select(CampaignRewardGrant)
+                .where(CampaignRewardGrant.user_id == int(deposit.user_id))
+                .where(CampaignRewardGrant.bot_id == int(deposit.bot_id))
+                .where(CampaignRewardGrant.grant_type == "first_deposit")
+            ).first()
+            duplicate_ledger = current_session.exec(
+                select(BalanceLedger).where(BalanceLedger.request_id == request_id)
+            ).first()
+            if duplicate_grant is not None or duplicate_ledger is not None:
+                return {"granted": False, "reason": "already_granted"}
+            if owns_session:
+                current_session.rollback()
+            raise
 
         if owns_session:
             current_session.commit()

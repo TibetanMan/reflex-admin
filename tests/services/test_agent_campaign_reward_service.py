@@ -69,8 +69,8 @@ def _seed_reward_case(session_factory):
             first_name="Reward",
             last_name="User",
             from_bot_id=int(bot.id or 0),
-            balance=Decimal("0.00"),
-            total_deposit=Decimal("0.00"),
+            balance=Decimal("50.00"),
+            total_deposit=Decimal("50.00"),
         )
         session.add(user)
         session.commit()
@@ -153,10 +153,12 @@ def test_apply_campaign_reward_for_first_bot_deposit_creates_grant_and_bonus_led
     assert result["bonus_amount"] == 15.00
     assert grant is not None
     assert bonus_ledger is not None
-    assert float(user.balance) == 15.00
-    assert float(user.total_deposit) == 0.00
+    assert float(user.balance) == 65.00
+    assert float(user.total_deposit) == 50.00
     assert float(account.balance) == 65.00
     assert float(account.total_deposit) == 50.00
+    assert float(user.balance) == float(account.balance)
+    assert float(user.total_deposit) == float(account.total_deposit)
 
 
 def test_apply_campaign_reward_is_idempotent_for_same_user_and_bot(tmp_path):
@@ -186,3 +188,45 @@ def test_second_completed_deposit_same_bot_gets_no_bonus(tmp_path):
     _seed_reward_case(session_factory)
 
     assert apply_agent_campaign_reward_for_deposit(deposit_id=2, session_factory=session_factory)["granted"] is False
+
+
+def test_apply_campaign_reward_handles_existing_bonus_ledger_idempotently(tmp_path):
+    session_factory = _build_session_factory(tmp_path)
+    _seed_reward_case(session_factory)
+
+    session = session_factory()
+    try:
+        user = session.exec(select(User).where(User.telegram_id == 123456789)).first()
+        session.add(
+            BalanceLedger(
+                user_id=int(user.id or 0),
+                bot_id=1,
+                action=BalanceAction.CAMPAIGN_BONUS,
+                amount=Decimal("15.00"),
+                before_balance=Decimal("50.00"),
+                after_balance=Decimal("65.00"),
+                request_id="campaign-bonus-1",
+                remark="retry-collision",
+            )
+        )
+        session.commit()
+    finally:
+        session.close()
+
+    result = apply_agent_campaign_reward_for_deposit(deposit_id=1, session_factory=session_factory)
+
+    session = session_factory()
+    try:
+        grants = list(session.exec(select(CampaignRewardGrant)).all())
+        ledgers = list(
+            session.exec(
+                select(BalanceLedger).where(BalanceLedger.request_id == "campaign-bonus-1")
+            ).all()
+        )
+    finally:
+        session.close()
+
+    assert result["granted"] is False
+    assert result["reason"] == "already_granted"
+    assert len(grants) <= 1
+    assert len(ledgers) == 1

@@ -11,6 +11,7 @@ from sqlmodel import Session, select
 from services.agent_campaign_reward_service import apply_agent_campaign_reward_for_deposit
 from services.deposit_chain_service import sync_pending_usdt_deposits
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
+from services.user_service import ensure_bot_account, sync_user_aggregate_from_accounts
 from services.wallet_config_sync import sync_wallets_from_config
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
@@ -201,15 +202,18 @@ def create_manual_deposit(
             select(AdminUser).where(AdminUser.username == str(operator_username or "").strip())
         ).first()
 
-        before_balance = Decimal(str(user.balance or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        account = ensure_bot_account(session, user=user, bot=bot)
+        before_balance = Decimal(str(account.balance or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         after_balance = (before_balance + amount_value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        user.balance = after_balance
-        user.total_deposit = (Decimal(str(user.total_deposit or 0)) + amount_value).quantize(
+        account.balance = after_balance
+        account.total_deposit = (Decimal(str(account.total_deposit or 0)) + amount_value).quantize(
             Decimal("0.01"),
             rounding=ROUND_HALF_UP,
         )
-        user.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        session.add(user)
+        account.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        account.last_active_at = datetime.now(timezone.utc).replace(tzinfo=None)
+        session.add(account)
+        sync_user_aggregate_from_accounts(session, user=user)
 
         deposit = Deposit(
             deposit_no=_next_deposit_no(session),
