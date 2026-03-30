@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional
 import requests
 from sqlmodel import Session, select
 
+from services.agent_campaign_reward_service import apply_agent_campaign_reward_for_deposit
 from shared.database import get_db_session
 from shared.models.balance_ledger import BalanceAction, BalanceLedger
 from shared.models.bot_user_account import BotUserAccount
@@ -375,6 +376,11 @@ def _apply_completed_deposit(
     deposit.updated_at = now
     deposit.completed_at = now
     session.add(deposit)
+    session.flush()
+    apply_agent_campaign_reward_for_deposit(
+        deposit_id=int(deposit.id or 0),
+        session=session,
+    )
 
 
 def sync_deposit_from_chain(

@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.agent_campaign_reward_service import apply_agent_campaign_reward_for_deposit
 from services.deposit_chain_service import sync_pending_usdt_deposits
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
 from services.wallet_config_sync import sync_wallets_from_config
@@ -269,6 +270,10 @@ def create_manual_deposit(
 
         session.commit()
         session.refresh(deposit)
+        apply_agent_campaign_reward_for_deposit(
+            deposit_id=int(deposit.id or 0),
+            session_factory=session_factory,
+        )
 
         user_map = {int(user.id or 0): user}
         bot_map = {int(bot.id or 0): bot}

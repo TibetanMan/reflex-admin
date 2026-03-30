@@ -28,6 +28,7 @@ _ACTION_TO_LABEL = {
     BalanceAction.DEBIT.value: "扣款",
     BalanceAction.REFUND.value: "退款",
     BalanceAction.MANUAL.value: "手动",
+    BalanceAction.CAMPAIGN_BONUS.value: "活动赠送",
 }
 
 
