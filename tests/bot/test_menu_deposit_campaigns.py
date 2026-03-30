@@ -25,7 +25,8 @@ def test_recharge_message_mentions_campaign_bonus(monkeypatch):
             "to_address": "TCampaignDepositWallet001",
             "expires_at": "2026-04-10 10:00:00",
             "campaign": {
-                "title": "首充活动",
+                "display_title": "首充活动",
+                "display_subtitle": "首次充值即可得奖励",
                 "summary": "首次充值赠送 5% + 10 USDT",
             },
         }
@@ -48,4 +49,6 @@ def test_recharge_message_mentions_campaign_bonus(monkeypatch):
     asyncio.run(menu.handle_recharge_amount_input(message, state))
 
     sent_text = message.answer_photo.await_args.kwargs["caption"]
+    assert "🎁 当前活动：首充活动" in sent_text
     assert "首次充值赠送 5% + 10 USDT" in sent_text
+    assert "首次充值即可得奖励" in sent_text

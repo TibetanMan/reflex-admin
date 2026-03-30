@@ -101,4 +101,6 @@ def test_create_bot_deposit_returns_active_campaign_summary(tmp_path):
     )
 
     row = create_bot_deposit(user_id=user_id, amount=Decimal("100.00"), bot_id=bot_id, session_factory=session_factory)
+    assert row["campaign"]["display_title"] == "首充活动"
+    assert row["campaign"]["display_subtitle"] == "首次充值即可得奖励"
     assert row["campaign"]["summary"] == "首次充值赠送 5% + 10 USDT"

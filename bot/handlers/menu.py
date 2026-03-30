@@ -858,10 +858,15 @@ async def handle_recharge_amount_input(message: Message, state: FSMContext):
         campaign = payload.get("campaign") or {}
         campaign_block = ""
         if campaign:
-            campaign_block = (
-                f"🎁 当前活动：{campaign.get('title') or '首充活动'}\n"
-                f"{campaign.get('summary')}\n"
-            )
+            title = str(campaign.get("display_title") or "首充活动").strip()
+            summary = str(campaign.get("summary") or "").strip()
+            subtitle = str(campaign.get("display_subtitle") or "").strip()
+            lines = [f"🎁 当前活动：{title}"]
+            if summary:
+                lines.append(summary)
+            if subtitle:
+                lines.append(subtitle)
+            campaign_block = "\n".join(lines) + "\n"
         caption = (
             f"{campaign_block}"
             f"【钱包地址(TRC-20)】：\n{to_address}\n\n"

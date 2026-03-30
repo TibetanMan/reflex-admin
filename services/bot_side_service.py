@@ -1381,7 +1381,6 @@ def create_bot_deposit(
         campaign = get_active_campaign_for_bot(
             bot_id=int(bot.id or 0),
             now=_now(),
-            session_factory=lambda: session,
         )
         return {
             "id": int(deposit.id or 0),
