@@ -110,6 +110,17 @@ def agent_verify_badge(agent: dict) -> rx.Component:
     )
 
 
+def campaign_status_badge(agent: dict) -> rx.Component:
+    status = agent["campaign"]["status"]
+    return rx.match(
+        status,
+        ("active", rx.badge("进行中", color_scheme="green", variant="soft")),
+        ("upcoming", rx.badge("待开始", color_scheme="blue", variant="soft")),
+        ("expired", rx.badge("已结束", color_scheme="gray", variant="soft")),
+        rx.badge("已停用", color_scheme="gray"),
+    )
+
+
 def render_agent_row(agent: dict) -> rx.Component:
     return rx.table.row(
         rx.table.cell(
@@ -148,6 +159,23 @@ def render_agent_row(agent: dict) -> rx.Component:
         rx.table.cell(agent_status_badge(agent)),
         rx.table.cell(agent_verify_badge(agent)),
         rx.table.cell(
+            rx.vstack(
+                campaign_status_badge(agent),
+                rx.text(
+                    rx.cond(agent["campaign"]["summary"], agent["campaign"]["summary"], "未配置活动"),
+                    size="1",
+                    color=rx.color("gray", 11),
+                ),
+                rx.text(
+                    rx.cond(agent["campaign"]["display_title"], agent["campaign"]["display_title"], "-"),
+                    size="1",
+                    color=rx.color("gray", 10),
+                ),
+                align="start",
+                spacing="1",
+            )
+        ),
+        rx.table.cell(
             rx.text(
                 "Bot ",
                 agent["total_bots"].to(str),
@@ -169,6 +197,16 @@ def render_agent_row(agent: dict) -> rx.Component:
                         on_click=lambda: with_focus_blur(AgentState.open_edit_modal(agent["id"])),
                     ),
                     content="编辑代理配置",
+                ),
+                rx.tooltip(
+                    rx.icon_button(
+                        rx.icon("gift", size=14),
+                        variant="ghost",
+                        size="1",
+                        color_scheme="amber",
+                        on_click=lambda: with_focus_blur(AgentState.open_campaign_modal(agent["id"])),
+                    ),
+                    content="活动配置",
                 ),
                 rx.tooltip(
                     rx.icon_button(
@@ -214,6 +252,7 @@ def agent_list_table() -> rx.Component:
                     rx.table.column_header_cell("USDT 地址"),
                     rx.table.column_header_cell("状态"),
                     rx.table.column_header_cell("认证"),
+                    rx.table.column_header_cell("活动配置"),
                     rx.table.column_header_cell("业务数据"),
                     rx.table.column_header_cell("操作"),
                 ),
@@ -225,7 +264,7 @@ def agent_list_table() -> rx.Component:
                     rx.table.row(
                         rx.table.cell(
                             rx.text("暂无代理数据", size="2", color=rx.color("gray", 10)),
-                            col_span=8,
+                            col_span=9,
                             text_align="center",
                         )
                     ),
@@ -506,6 +545,145 @@ def agent_edit_modal() -> rx.Component:
     )
 
 
+def agent_campaign_modal() -> rx.Component:
+    return rx.dialog.root(
+        rx.dialog.content(
+            rx.dialog.title("活动配置"),
+            rx.dialog.description(
+                "配置代理首充活动的展示文案、时间窗口和赠送规则",
+                size="2",
+                color=rx.color("gray", 11),
+            ),
+            rx.vstack(
+                rx.checkbox(
+                    "启用活动",
+                    checked=AgentState.campaign_enabled,
+                    on_change=AgentState.set_campaign_enabled,
+                ),
+                rx.grid(
+                    rx.vstack(
+                        rx.text("活动标题", size="2", weight="medium"),
+                        rx.input(
+                            value=AgentState.campaign_title,
+                            on_change=AgentState.set_campaign_title,
+                            placeholder="例如：首充活动",
+                            width="100%",
+                        ),
+                        align="start",
+                        spacing="1",
+                        width="100%",
+                    ),
+                    rx.vstack(
+                        rx.text("活动副标题", size="2", weight="medium"),
+                        rx.input(
+                            value=AgentState.campaign_subtitle,
+                            on_change=AgentState.set_campaign_subtitle,
+                            placeholder="例如：首次充值即可得奖励",
+                            width="100%",
+                        ),
+                        align="start",
+                        spacing="1",
+                        width="100%",
+                    ),
+                    columns="2",
+                    spacing="4",
+                    width="100%",
+                ),
+                rx.grid(
+                    rx.vstack(
+                        rx.text("开始时间", size="2", weight="medium"),
+                        rx.input(
+                            value=AgentState.campaign_starts_at,
+                            on_change=AgentState.set_campaign_starts_at,
+                            placeholder="2026-04-01 00:00:00",
+                            width="100%",
+                        ),
+                        align="start",
+                        spacing="1",
+                        width="100%",
+                    ),
+                    rx.vstack(
+                        rx.text("结束时间", size="2", weight="medium"),
+                        rx.input(
+                            value=AgentState.campaign_ends_at,
+                            on_change=AgentState.set_campaign_ends_at,
+                            placeholder="2026-04-30 23:59:59",
+                            width="100%",
+                        ),
+                        align="start",
+                        spacing="1",
+                        width="100%",
+                    ),
+                    columns="2",
+                    spacing="4",
+                    width="100%",
+                ),
+                rx.grid(
+                    rx.vstack(
+                        rx.text("首充赠送比例", size="2", weight="medium"),
+                        rx.input(
+                            value=AgentState.campaign_bonus_rate,
+                            on_change=AgentState.set_campaign_bonus_rate,
+                            placeholder="0.0500 或 5",
+                            width="100%",
+                        ),
+                        align="start",
+                        spacing="1",
+                        width="100%",
+                    ),
+                    rx.vstack(
+                        rx.text("固定赠送金额", size="2", weight="medium"),
+                        rx.input(
+                            value=AgentState.campaign_bonus_amount,
+                            on_change=AgentState.set_campaign_bonus_amount,
+                            placeholder="10.00",
+                            width="100%",
+                        ),
+                        align="start",
+                        spacing="1",
+                        width="100%",
+                    ),
+                    columns="2",
+                    spacing="4",
+                    width="100%",
+                ),
+                rx.box(
+                    rx.text("活动预览", size="2", weight="medium"),
+                    rx.text(
+                        AgentState.campaign_preview_text,
+                        size="2",
+                        color=rx.color("gray", 11),
+                    ),
+                    width="100%",
+                    padding="12px",
+                    background=rx.color("gray", 2),
+                    border_radius="12px",
+                ),
+                spacing="4",
+                width="100%",
+                margin_top="16px",
+            ),
+            rx.hstack(
+                rx.dialog.close(
+                    rx.button(
+                        "取消",
+                        variant="soft",
+                        color_scheme="gray",
+                        on_click=AgentState.close_campaign_modal,
+                    )
+                ),
+                rx.spacer(),
+                rx.button("保存活动", on_click=AgentState.save_campaign_config(AuthState.username)),
+                width="100%",
+                margin_top="20px",
+            ),
+            max_width="680px",
+        ),
+        open=AgentState.show_campaign_modal,
+        on_open_change=AgentState.handle_campaign_modal_change,
+    )
+
+
 def super_admin_only_notice() -> rx.Component:
     return rx.box(
         rx.callout(
@@ -579,6 +757,7 @@ def agents_page() -> rx.Component:
             agent_list_table(),
             agent_create_modal(),
             agent_edit_modal(),
+            agent_campaign_modal(),
             width="100%",
             on_mount=AgentState.load_agents_data,
         ),

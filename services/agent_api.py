@@ -7,13 +7,31 @@ from typing import Any, Optional
 from services.http_api_client import request_json
 
 
+def _normalize_agent_row(item: Any) -> dict[str, Any]:
+    row = dict(item) if isinstance(item, dict) else {}
+    campaign = dict(row.get("campaign") or {})
+    row["campaign"] = {
+        "agent_id": int(row.get("id") or 0),
+        "is_enabled": bool(campaign.get("is_enabled", False)),
+        "status": str(campaign.get("status") or "disabled"),
+        "summary": str(campaign.get("summary") or ""),
+        "display_title": str(campaign.get("display_title") or ""),
+        "display_subtitle": str(campaign.get("display_subtitle") or ""),
+        "starts_at": campaign.get("starts_at"),
+        "ends_at": campaign.get("ends_at"),
+        "first_deposit_bonus_rate": float(campaign.get("first_deposit_bonus_rate") or 0),
+        "first_deposit_bonus_amount": float(campaign.get("first_deposit_bonus_amount") or 0),
+    }
+    return row
+
+
 def list_agents_snapshot(
     *,
     session_factory: Optional[Any] = None,
 ) -> list[dict[str, Any]]:
     del session_factory
     data = request_json("GET", "/api/v1/agents")
-    return list(data) if isinstance(data, list) else []
+    return [_normalize_agent_row(item) for item in data] if isinstance(data, list) else []
 
 
 def create_agent_with_bot(
@@ -105,12 +123,12 @@ def update_agent_campaign_config(
     payload = {
         "actor_username": str(actor_username or "").strip(),
         "is_enabled": bool(is_enabled),
-        "starts_at": starts_at,
-        "ends_at": ends_at,
+        "starts_at": str(starts_at or "").strip(),
+        "ends_at": str(ends_at or "").strip(),
         "first_deposit_bonus_rate": float(first_deposit_bonus_rate),
         "first_deposit_bonus_amount": float(first_deposit_bonus_amount),
-        "display_title": display_title,
-        "display_subtitle": display_subtitle,
+        "display_title": str(display_title or "").strip(),
+        "display_subtitle": str(display_subtitle or "").strip(),
     }
     data = request_json("PATCH", f"/api/v1/agents/{int(agent_id)}/campaign", payload)
     return dict(data) if isinstance(data, dict) else {}

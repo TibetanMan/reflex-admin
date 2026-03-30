@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Optional
 
 import reflex as rx
@@ -10,6 +11,7 @@ from services.agent_api import (
     create_agent_with_bot,
     list_agents_snapshot,
     toggle_agent_record_status,
+    update_agent_campaign_config,
     update_agent_record,
 )
 
@@ -24,7 +26,9 @@ class AgentState(rx.State):
 
     show_create_modal: bool = False
     show_edit_modal: bool = False
+    show_campaign_modal: bool = False
     selected_agent_id: Optional[int] = None
+    campaign_agent_id: Optional[int] = None
 
     create_name: str = ""
     create_contact_telegram: str = ""
@@ -43,6 +47,14 @@ class AgentState(rx.State):
     edit_usdt_address: str = ""
     edit_is_verified: bool = False
 
+    campaign_enabled: bool = False
+    campaign_title: str = ""
+    campaign_subtitle: str = ""
+    campaign_starts_at: str = ""
+    campaign_ends_at: str = ""
+    campaign_bonus_rate: str = ""
+    campaign_bonus_amount: str = ""
+
     def _find_agent(self, agent_id: int) -> Optional[Dict[str, Any]]:
         for agent in self.agents:
             if int(agent["id"]) == int(agent_id):
@@ -59,6 +71,33 @@ class AgentState(rx.State):
         if rate < 0 or rate > 1:
             return None
         return round(rate, 4)
+
+    def _parse_campaign_rate(self, value: str) -> Optional[float]:
+        text = str(value or "").strip() or "0"
+        try:
+            rate = Decimal(text)
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        if not rate.is_finite():
+            return None
+        if rate > 1:
+            rate = rate / Decimal("100")
+        if rate < 0 or rate > 1:
+            return None
+        return float(rate.quantize(Decimal("0.0001")))
+
+    def _parse_campaign_amount(self, value: str) -> Optional[float]:
+        text = str(value or "").strip() or "0"
+        try:
+            amount = Decimal(text)
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+        if not amount.is_finite() or amount < 0:
+            return None
+        try:
+            return float(amount.quantize(Decimal("0.01")))
+        except InvalidOperation:
+            return None
 
     def load_agents_data(self):
         self.agents = list_agents_snapshot()
@@ -190,6 +229,86 @@ class AgentState(rx.State):
     def set_edit_is_verified(self, value: bool):
         self.edit_is_verified = value
 
+    def open_campaign_modal(self, agent_id: int):
+        agent = self._find_agent(agent_id)
+        if not agent:
+            return rx.toast.error("Agent not found", duration=1500)
+
+        campaign = dict(agent.get("campaign") or {})
+        rate_value = float(campaign.get("first_deposit_bonus_rate", 0) or 0)
+        amount_value = float(campaign.get("first_deposit_bonus_amount", 0) or 0)
+        self.campaign_agent_id = int(agent_id)
+        self.campaign_enabled = bool(campaign.get("is_enabled", False))
+        self.campaign_title = str(campaign.get("display_title", "") or "")
+        self.campaign_subtitle = str(campaign.get("display_subtitle", "") or "")
+        self.campaign_starts_at = str(campaign.get("starts_at", "") or "")
+        self.campaign_ends_at = str(campaign.get("ends_at", "") or "")
+        self.campaign_bonus_rate = f"{rate_value:.4f}"
+        self.campaign_bonus_amount = f"{amount_value:.2f}"
+        self.show_campaign_modal = True
+
+    def close_campaign_modal(self):
+        self.show_campaign_modal = False
+        self.campaign_agent_id = None
+
+    def handle_campaign_modal_change(self, is_open: bool):
+        if not is_open:
+            self.close_campaign_modal()
+
+    def set_campaign_enabled(self, value: bool):
+        self.campaign_enabled = value
+
+    def set_campaign_title(self, value: str):
+        self.campaign_title = value
+
+    def set_campaign_subtitle(self, value: str):
+        self.campaign_subtitle = value
+
+    def set_campaign_starts_at(self, value: str):
+        self.campaign_starts_at = value
+
+    def set_campaign_ends_at(self, value: str):
+        self.campaign_ends_at = value
+
+    def set_campaign_bonus_rate(self, value: str):
+        self.campaign_bonus_rate = value
+
+    def set_campaign_bonus_amount(self, value: str):
+        self.campaign_bonus_amount = value
+
+    def save_campaign_config(self, actor_username: str = ""):
+        if self.campaign_agent_id is None:
+            return rx.toast.error("Please select an agent", duration=1500)
+
+        rate = self._parse_campaign_rate(self.campaign_bonus_rate)
+        fixed = self._parse_campaign_amount(self.campaign_bonus_amount)
+        if rate is None:
+            return rx.toast.error("Invalid campaign bonus rate", duration=2200)
+        if fixed is None:
+            return rx.toast.error("Invalid fixed bonus amount", duration=2200)
+
+        actor_username_value = str(actor_username or "").strip()
+        if not actor_username_value:
+            return rx.toast.error("Operator username is required", duration=2200)
+        try:
+            update_agent_campaign_config(
+                agent_id=int(self.campaign_agent_id),
+                actor_username=actor_username_value,
+                is_enabled=bool(self.campaign_enabled),
+                starts_at=self.campaign_starts_at.strip(),
+                ends_at=self.campaign_ends_at.strip(),
+                first_deposit_bonus_rate=rate,
+                first_deposit_bonus_amount=fixed,
+                display_title=self.campaign_title.strip(),
+                display_subtitle=self.campaign_subtitle.strip(),
+            )
+        except ValueError as exc:
+            return rx.toast.error(str(exc), duration=2200)
+
+        self.close_campaign_modal()
+        self.load_agents_data()
+        return rx.toast.success("Campaign updated", duration=2000)
+
     def save_edit_agent(self):
         if self.selected_agent_id is None:
             return rx.toast.error("Please select an agent", duration=1500)
@@ -280,3 +399,13 @@ class AgentState(rx.State):
     @rx.var
     def total_agent_profit(self) -> float:
         return round(sum(float(item.get("total_profit", 0)) for item in self.agents), 2)
+
+    @rx.var
+    def campaign_preview_text(self) -> str:
+        rate = self._parse_campaign_rate(self.campaign_bonus_rate) or 0.0
+        amount = self._parse_campaign_amount(self.campaign_bonus_amount) or 0.0
+        rate_text = f"{rate * 100:.2f}".rstrip("0").rstrip(".")
+        amount_text = f"{amount:.2f}".rstrip("0").rstrip(".")
+        title = self.campaign_title.strip() or "首充活动"
+        subtitle = self.campaign_subtitle.strip() or "首次充值用户可参与"
+        return f"{title}｜{subtitle}。首次充值赠送 {rate_text}% + {amount_text} USDT"
