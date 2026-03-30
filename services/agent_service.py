@@ -13,6 +13,7 @@ from shared.database import get_db_session
 from shared.models.admin_user import AdminRole, AdminUser
 from shared.models.agent import Agent
 from shared.models.bot_instance import BotInstance, BotStatus
+from services.agent_campaign_service import get_agent_campaign_summary
 
 
 def _generate_secure_temp_password() -> str:
@@ -46,7 +47,7 @@ def _ensure_unique_admin_identity(session: Session, base: str) -> tuple[str, str
     return username, email
 
 
-def _to_row(agent: Agent, bots: list[BotInstance]) -> dict[str, Any]:
+def _to_row(agent: Agent, bots: list[BotInstance], *, session: Session) -> dict[str, Any]:
     bot_rows = [item for item in bots if int(item.owner_agent_id or 0) == int(agent.id or 0)]
     primary_bot = bot_rows[0] if bot_rows else None
     total_users = sum(int(item.total_users or 0) for item in bot_rows)
@@ -69,6 +70,7 @@ def _to_row(agent: Agent, bots: list[BotInstance]) -> dict[str, Any]:
         "total_orders": total_orders,
         "total_profit": float(agent.total_profit or 0),
         "created_at": agent.created_at.strftime("%Y-%m-%d %H:%M"),
+        "campaign": get_agent_campaign_summary(agent_id=int(agent.id or 0), session=session),
     }
 
 
@@ -81,7 +83,7 @@ def list_agents_snapshot(
     try:
         agents = list(session.exec(select(Agent).order_by(Agent.created_at.desc())).all())
         bots = list(session.exec(select(BotInstance).order_by(BotInstance.created_at.asc())).all())
-        return [_to_row(item, bots) for item in agents]
+        return [_to_row(item, bots, session=session) for item in agents]
     finally:
         session.close()
 

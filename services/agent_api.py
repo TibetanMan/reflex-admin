@@ -86,3 +86,31 @@ def toggle_agent_record_status(
         f"/api/v1/agents/{int(agent_id)}/status",
     )
     return dict(data) if isinstance(data, dict) else {}
+
+
+def update_agent_campaign_config(
+    *,
+    agent_id: int,
+    actor_username: str,
+    is_enabled: bool,
+    starts_at: str = "",
+    ends_at: str = "",
+    first_deposit_bonus_rate: float = 0.0,
+    first_deposit_bonus_amount: float = 0.0,
+    display_title: str = "",
+    display_subtitle: str = "",
+    session_factory: Optional[Any] = None,
+) -> dict[str, Any]:
+    del session_factory
+    payload = {
+        "actor_username": str(actor_username or "").strip(),
+        "is_enabled": bool(is_enabled),
+        "starts_at": starts_at,
+        "ends_at": ends_at,
+        "first_deposit_bonus_rate": float(first_deposit_bonus_rate),
+        "first_deposit_bonus_amount": float(first_deposit_bonus_amount),
+        "display_title": display_title,
+        "display_subtitle": display_subtitle,
+    }
+    data = request_json("PATCH", f"/api/v1/agents/{int(agent_id)}/campaign", payload)
+    return dict(data) if isinstance(data, dict) else {}

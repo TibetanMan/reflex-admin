@@ -155,6 +155,9 @@ from services.agent_service import (
 from services.agent_service import (
     update_agent_record as update_agent_record_service,
 )
+from services.agent_campaign_service import (
+    upsert_agent_campaign_config as upsert_agent_campaign_config_service,
+)
 from services.merchant_service import (
     create_merchant_record as create_merchant_record_service,
 )
@@ -295,6 +298,7 @@ _BOT_ITEM_RE = re.compile(r"^/api/v1/bots/(\d+)$")
 _BOT_STATUS_RE = re.compile(r"^/api/v1/bots/(\d+)/status$")
 _AGENT_ITEM_RE = re.compile(r"^/api/v1/agents/(\d+)$")
 _AGENT_STATUS_RE = re.compile(r"^/api/v1/agents/(\d+)/status$")
+_AGENT_CAMPAIGN_RE = re.compile(r"^/api/v1/agents/(\d+)/campaign$")
 _MERCHANT_ITEM_RE = re.compile(r"^/api/v1/merchants/(\d+)$")
 _MERCHANT_STATUS_RE = re.compile(r"^/api/v1/merchants/(\d+)/status$")
 _MERCHANT_FEATURED_RE = re.compile(r"^/api/v1/merchants/(\d+)/featured$")
@@ -734,6 +738,21 @@ def dispatch_request(
             profit_rate=float(body.get("profit_rate") or 0),
             usdt_address=str(body.get("usdt_address") or ""),
             is_verified=bool(body.get("is_verified", False)),
+        )
+
+    matched_campaign = _AGENT_CAMPAIGN_RE.fullmatch(p)
+    if m == "PATCH" and matched_campaign:
+        agent_id = int(matched_campaign.group(1))
+        return upsert_agent_campaign_config_service(
+            agent_id=agent_id,
+            actor_username=str(body.get("actor_username") or ""),
+            is_enabled=bool(body.get("is_enabled", False)),
+            starts_at=body.get("starts_at"),
+            ends_at=body.get("ends_at"),
+            first_deposit_bonus_rate=body.get("first_deposit_bonus_rate"),
+            first_deposit_bonus_amount=body.get("first_deposit_bonus_amount"),
+            display_title=str(body.get("display_title") or ""),
+            display_subtitle=str(body.get("display_subtitle") or ""),
         )
 
     matched = _AGENT_STATUS_RE.fullmatch(p)
