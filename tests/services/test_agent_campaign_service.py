@@ -72,7 +72,7 @@ def test_upsert_agent_campaign_persists_single_config_row(tmp_path):
         agent_id=agent_id,
         actor_username="admin",
         is_enabled=True,
-        starts_at="2026-04-01 00:00:00",
+        starts_at="2026-03-01 00:00:00",
         ends_at="2026-04-30 23:59:59",
         first_deposit_bonus_rate=Decimal("0.05"),
         first_deposit_bonus_amount=Decimal("10.00"),
@@ -85,7 +85,7 @@ def test_upsert_agent_campaign_persists_single_config_row(tmp_path):
         agent_id=agent_id,
         actor_username="admin",
         is_enabled=True,
-        starts_at="2026-04-01 00:00:00",
+        starts_at="2026-03-01 00:00:00",
         ends_at="2026-04-30 23:59:59",
         first_deposit_bonus_rate=Decimal("0.06"),
         first_deposit_bonus_amount=Decimal("12.00"),
@@ -151,3 +151,63 @@ def test_get_active_campaign_for_bot_formats_display_payload(tmp_path):
         session_factory=session_factory,
     )
     assert payload["summary"] == "首次充值赠送 5% + 10 USDT"
+
+
+def test_upsert_agent_campaign_returns_disabled_status_when_disabled(tmp_path):
+    session_factory = _build_session_factory(tmp_path)
+    agent_id, _ = _seed_agent_and_bot(session_factory)
+
+    row = upsert_agent_campaign_config(
+        agent_id=agent_id,
+        actor_username="admin",
+        is_enabled=False,
+        starts_at="2026-04-01 00:00:00",
+        ends_at="2026-04-30 23:59:59",
+        first_deposit_bonus_rate=Decimal("0.05"),
+        first_deposit_bonus_amount=Decimal("10.00"),
+        display_title="首充活动",
+        display_subtitle="首次充值即可得奖励",
+        session_factory=session_factory,
+    )
+
+    assert row["status"] == "disabled"
+
+
+def test_upsert_agent_campaign_returns_upcoming_status_when_start_is_future(tmp_path):
+    session_factory = _build_session_factory(tmp_path)
+    agent_id, _ = _seed_agent_and_bot(session_factory)
+
+    row = upsert_agent_campaign_config(
+        agent_id=agent_id,
+        actor_username="admin",
+        is_enabled=True,
+        starts_at="2099-04-01 00:00:00",
+        ends_at="2099-04-30 23:59:59",
+        first_deposit_bonus_rate=Decimal("0.05"),
+        first_deposit_bonus_amount=Decimal("10.00"),
+        display_title="首充活动",
+        display_subtitle="首次充值即可得奖励",
+        session_factory=session_factory,
+    )
+
+    assert row["status"] == "upcoming"
+
+
+def test_upsert_agent_campaign_returns_expired_status_when_end_is_past(tmp_path):
+    session_factory = _build_session_factory(tmp_path)
+    agent_id, _ = _seed_agent_and_bot(session_factory)
+
+    row = upsert_agent_campaign_config(
+        agent_id=agent_id,
+        actor_username="admin",
+        is_enabled=True,
+        starts_at="2020-04-01 00:00:00",
+        ends_at="2020-04-30 23:59:59",
+        first_deposit_bonus_rate=Decimal("0.05"),
+        first_deposit_bonus_amount=Decimal("10.00"),
+        display_title="首充活动",
+        display_subtitle="首次充值即可得奖励",
+        session_factory=session_factory,
+    )
+
+    assert row["status"] == "expired"

@@ -132,11 +132,7 @@ def upsert_agent_campaign_config(
         session.add(row)
         session.commit()
         session.refresh(row)
-
-        payload = _row_to_payload(row, now=_now())
-        # Upsert response is interpreted as current admin-state confirmation.
-        payload["status"] = "active" if bool(row.is_enabled) else "disabled"
-        return payload
+        return _row_to_payload(row, now=_now())
     except Exception:
         session.rollback()
         raise
