@@ -37,6 +37,17 @@ def test_runtime_schema_patch_contains_campaign_timestamp_columns():
         "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
         ")"
     ) in patch_sql
+
+
+def test_runtime_schema_patch_contains_balance_action_campaign_bonus_enum_sql():
+    patch_consts = apply_runtime_schema_patches.__code__.co_consts
+    patch_sql = " ".join([value for value in patch_consts if isinstance(value, str)])
+    assert (
+        "DO $$ BEGIN "
+        "ALTER TYPE balanceaction ADD VALUE IF NOT EXISTS 'campaign_bonus'; "
+        "EXCEPTION WHEN duplicate_object THEN NULL; "
+        "END $$;"
+    ) in patch_sql
     assert (
         "CREATE TABLE IF NOT EXISTS agent_campaign_configs ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT,"

@@ -20,6 +20,13 @@ def apply_runtime_schema_patches() -> None:
     try:
         dialect = session.bind.dialect.name if session.bind is not None else ""
         if dialect == "postgresql":
+            _safe_exec(
+                session,
+                "DO $$ BEGIN "
+                "ALTER TYPE balanceaction ADD VALUE IF NOT EXISTS 'campaign_bonus'; "
+                "EXCEPTION WHEN duplicate_object THEN NULL; "
+                "END $$;",
+            )
             _safe_exec(session, "ALTER TABLE users ALTER COLUMN telegram_id TYPE BIGINT")
             _safe_exec(
                 session,
