@@ -117,7 +117,9 @@ def apply_runtime_schema_patches() -> None:
                 "first_deposit_bonus_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00,"
                 "display_title TEXT NULL,"
                 "display_subtitle TEXT NULL,"
-                "updated_by INTEGER NULL REFERENCES admin_users(id)"
+                "updated_by INTEGER NULL REFERENCES admin_users(id),"
+                "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
                 ")",
             )
             _safe_exec(
@@ -159,6 +161,16 @@ def apply_runtime_schema_patches() -> None:
                 session,
                 "ALTER TABLE agent_campaign_configs "
                 "ADD COLUMN IF NOT EXISTS updated_by INTEGER",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP",
             )
             _safe_exec(
                 session,
@@ -307,6 +319,8 @@ def apply_runtime_schema_patches() -> None:
                 "display_title TEXT NULL,"
                 "display_subtitle TEXT NULL,"
                 "updated_by INTEGER NULL,"
+                "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
                 "UNIQUE(agent_id)"
                 ")",
             )
@@ -343,6 +357,14 @@ def apply_runtime_schema_patches() -> None:
             _safe_exec(
                 session,
                 "ALTER TABLE agent_campaign_configs ADD COLUMN updated_by INTEGER",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs ADD COLUMN updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
             )
             _safe_exec(
                 session,

@@ -25,6 +25,8 @@ class AgentCampaignConfig(SQLModel, table=True):
     display_title: Optional[str] = Field(default=None)
     display_subtitle: Optional[str] = Field(default=None)
     updated_by: Optional[int] = Field(default=None, foreign_key="admin_users.id")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None))
 
 
 class CampaignRewardGrant(SQLModel, table=True):
