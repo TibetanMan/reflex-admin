@@ -49,7 +49,8 @@ def init_db():
         BotUserAccount,
         InventoryLibrary, InventoryImportTask, InventoryImportLineError,
         UserBotSource, ExportTask,
-        PushReviewTask
+        PushReviewTask,
+        AgentCampaignConfig, CampaignRewardGrant
     )
     try:
         SQLModel.metadata.create_all(sync_engine)

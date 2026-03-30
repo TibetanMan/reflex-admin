@@ -105,6 +105,136 @@ def apply_runtime_schema_patches() -> None:
                 "UPDATE cart_items SET bot_id = (SELECT id FROM bot_instances ORDER BY id ASC LIMIT 1) "
                 "WHERE bot_id IS NULL",
             )
+            _safe_exec(
+                session,
+                "CREATE TABLE IF NOT EXISTS agent_campaign_configs ("
+                "id SERIAL PRIMARY KEY,"
+                "agent_id INTEGER NOT NULL UNIQUE REFERENCES agents(id),"
+                "is_enabled BOOLEAN NOT NULL DEFAULT FALSE,"
+                "starts_at TIMESTAMP NULL,"
+                "ends_at TIMESTAMP NULL,"
+                "first_deposit_bonus_rate NUMERIC(18,4) NOT NULL DEFAULT 0.0000,"
+                "first_deposit_bonus_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00,"
+                "display_title TEXT NULL,"
+                "display_subtitle TEXT NULL,"
+                "updated_by INTEGER NULL REFERENCES admin_users(id)"
+                ")",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS is_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS starts_at TIMESTAMP",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS ends_at TIMESTAMP",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS first_deposit_bonus_rate NUMERIC(18,4) NOT NULL DEFAULT 0.0000",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS first_deposit_bonus_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS display_title TEXT",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS display_subtitle TEXT",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN IF NOT EXISTS updated_by INTEGER",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_agent_campaign_configs_agent_id "
+                "ON agent_campaign_configs (agent_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_campaign_configs_agent_id_idx "
+                "ON agent_campaign_configs (agent_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE TABLE IF NOT EXISTS campaign_reward_grants ("
+                "id SERIAL PRIMARY KEY,"
+                "campaign_config_id INTEGER NULL REFERENCES agent_campaign_configs(id),"
+                "user_id INTEGER NOT NULL REFERENCES users(id),"
+                "bot_id INTEGER NOT NULL REFERENCES bot_instances(id),"
+                "grant_type VARCHAR(64) NOT NULL,"
+                "reward_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00,"
+                "granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "operator_id INTEGER NULL REFERENCES admin_users(id),"
+                "remark TEXT NULL,"
+                "CONSTRAINT uq_campaign_reward_user_bot_type UNIQUE (user_id, bot_id, grant_type)"
+                ")",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants "
+                "ADD COLUMN IF NOT EXISTS campaign_config_id INTEGER",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants "
+                "ADD COLUMN IF NOT EXISTS reward_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants "
+                "ADD COLUMN IF NOT EXISTS granted_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants "
+                "ADD COLUMN IF NOT EXISTS operator_id INTEGER",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants "
+                "ADD COLUMN IF NOT EXISTS remark TEXT",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_campaign_config_id "
+                "ON campaign_reward_grants (campaign_config_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_user_id "
+                "ON campaign_reward_grants (user_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_bot_id "
+                "ON campaign_reward_grants (bot_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_grant_type "
+                "ON campaign_reward_grants (grant_type)",
+            )
+            _safe_exec(
+                session,
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_campaign_reward_user_bot_type_idx "
+                "ON campaign_reward_grants (user_id, bot_id, grant_type)",
+            )
         else:
             # SQLite dev/test fallback.
             _safe_exec(
@@ -163,6 +293,126 @@ def apply_runtime_schema_patches() -> None:
                 session,
                 "UPDATE cart_items SET bot_id = (SELECT id FROM bot_instances ORDER BY id ASC LIMIT 1) "
                 "WHERE bot_id IS NULL",
+            )
+            _safe_exec(
+                session,
+                "CREATE TABLE IF NOT EXISTS agent_campaign_configs ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "agent_id INTEGER NOT NULL,"
+                "is_enabled BOOLEAN NOT NULL DEFAULT 0,"
+                "starts_at DATETIME NULL,"
+                "ends_at DATETIME NULL,"
+                "first_deposit_bonus_rate NUMERIC(18,4) NOT NULL DEFAULT 0.0000,"
+                "first_deposit_bonus_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00,"
+                "display_title TEXT NULL,"
+                "display_subtitle TEXT NULL,"
+                "updated_by INTEGER NULL,"
+                "UNIQUE(agent_id)"
+                ")",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs ADD COLUMN is_enabled BOOLEAN NOT NULL DEFAULT 0",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs ADD COLUMN starts_at DATETIME",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs ADD COLUMN ends_at DATETIME",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN first_deposit_bonus_rate NUMERIC(18,4) NOT NULL DEFAULT 0.0000",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs "
+                "ADD COLUMN first_deposit_bonus_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs ADD COLUMN display_title TEXT",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs ADD COLUMN display_subtitle TEXT",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE agent_campaign_configs ADD COLUMN updated_by INTEGER",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_agent_campaign_configs_agent_id "
+                "ON agent_campaign_configs (agent_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_campaign_configs_agent_id_idx "
+                "ON agent_campaign_configs (agent_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE TABLE IF NOT EXISTS campaign_reward_grants ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                "campaign_config_id INTEGER NULL,"
+                "user_id INTEGER NOT NULL,"
+                "bot_id INTEGER NOT NULL,"
+                "grant_type TEXT NOT NULL,"
+                "reward_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00,"
+                "granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                "operator_id INTEGER NULL,"
+                "remark TEXT NULL,"
+                "UNIQUE(user_id, bot_id, grant_type)"
+                ")",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants ADD COLUMN campaign_config_id INTEGER",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants ADD COLUMN reward_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants ADD COLUMN granted_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants ADD COLUMN operator_id INTEGER",
+            )
+            _safe_exec(
+                session,
+                "ALTER TABLE campaign_reward_grants ADD COLUMN remark TEXT",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_campaign_config_id "
+                "ON campaign_reward_grants (campaign_config_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_user_id "
+                "ON campaign_reward_grants (user_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_bot_id "
+                "ON campaign_reward_grants (bot_id)",
+            )
+            _safe_exec(
+                session,
+                "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_grant_type "
+                "ON campaign_reward_grants (grant_type)",
+            )
+            _safe_exec(
+                session,
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_campaign_reward_user_bot_type_idx "
+                "ON campaign_reward_grants (user_id, bot_id, grant_type)",
             )
     finally:
         session.close()

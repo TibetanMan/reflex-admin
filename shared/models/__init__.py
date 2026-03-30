@@ -26,6 +26,7 @@ from .inventory import (
 )
 from .user_export import UserBotSource, ExportTask, ExportTaskType, ExportTaskStatus
 from .push_review import PushReviewTask, PushReviewStatus
+from .agent_campaign import AgentCampaignConfig, CampaignRewardGrant
 
 __all__ = [
     "User",
@@ -59,4 +60,6 @@ __all__ = [
     "ExportTaskStatus",
     "PushReviewTask",
     "PushReviewStatus",
+    "AgentCampaignConfig",
+    "CampaignRewardGrant",
 ]

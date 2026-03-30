@@ -16,6 +16,7 @@ class BalanceAction(str, Enum):
     DEBIT = "debit"
     REFUND = "refund"
     MANUAL = "manual"
+    CAMPAIGN_BONUS = "campaign_bonus"
 
 
 class BalanceLedger(SQLModel, table=True):
