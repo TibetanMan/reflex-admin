@@ -181,16 +181,6 @@ def apply_runtime_schema_patches() -> None:
             )
             _safe_exec(
                 session,
-                "CREATE INDEX IF NOT EXISTS ix_agent_campaign_configs_agent_id "
-                "ON agent_campaign_configs (agent_id)",
-            )
-            _safe_exec(
-                session,
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_campaign_configs_agent_id_idx "
-                "ON agent_campaign_configs (agent_id)",
-            )
-            _safe_exec(
-                session,
                 "CREATE TABLE IF NOT EXISTS campaign_reward_grants ("
                 "id SERIAL PRIMARY KEY,"
                 "campaign_config_id INTEGER NULL REFERENCES agent_campaign_configs(id),"
@@ -248,11 +238,6 @@ def apply_runtime_schema_patches() -> None:
                 session,
                 "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_grant_type "
                 "ON campaign_reward_grants (grant_type)",
-            )
-            _safe_exec(
-                session,
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_campaign_reward_user_bot_type_idx "
-                "ON campaign_reward_grants (user_id, bot_id, grant_type)",
             )
         else:
             # SQLite dev/test fallback.
@@ -375,16 +360,6 @@ def apply_runtime_schema_patches() -> None:
             )
             _safe_exec(
                 session,
-                "CREATE INDEX IF NOT EXISTS ix_agent_campaign_configs_agent_id "
-                "ON agent_campaign_configs (agent_id)",
-            )
-            _safe_exec(
-                session,
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_agent_campaign_configs_agent_id_idx "
-                "ON agent_campaign_configs (agent_id)",
-            )
-            _safe_exec(
-                session,
                 "CREATE TABLE IF NOT EXISTS campaign_reward_grants ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT,"
                 "campaign_config_id INTEGER NULL,"
@@ -437,11 +412,6 @@ def apply_runtime_schema_patches() -> None:
                 session,
                 "CREATE INDEX IF NOT EXISTS ix_campaign_reward_grants_grant_type "
                 "ON campaign_reward_grants (grant_type)",
-            )
-            _safe_exec(
-                session,
-                "CREATE UNIQUE INDEX IF NOT EXISTS uq_campaign_reward_user_bot_type_idx "
-                "ON campaign_reward_grants (user_id, bot_id, grant_type)",
             )
     finally:
         session.close()

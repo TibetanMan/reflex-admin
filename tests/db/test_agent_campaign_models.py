@@ -1,67 +1,70 @@
+from sqlalchemy import inspect
+from sqlmodel import SQLModel, create_engine
+
+import shared.models as models
 from shared.models.agent_campaign import AgentCampaignConfig, CampaignRewardGrant
 from shared.models.balance_ledger import BalanceAction
 from shared.schema_patch import apply_runtime_schema_patches
 
 
-def test_campaign_models_are_registered_in_sqlmodel_metadata():
-    assert AgentCampaignConfig.__tablename__ == "agent_campaign_configs"
-    assert CampaignRewardGrant.__tablename__ == "campaign_reward_grants"
+def test_campaign_models_are_exported_from_shared_models():
+    assert "AgentCampaignConfig" in models.__all__
+    assert "CampaignRewardGrant" in models.__all__
+    assert models.AgentCampaignConfig is AgentCampaignConfig
+    assert models.CampaignRewardGrant is CampaignRewardGrant
+
+
+def test_campaign_tables_are_created_with_expected_columns():
+    engine = create_engine("sqlite:///:memory:")
+    SQLModel.metadata.create_all(engine)
+    inspector = inspect(engine)
+
+    assert "agent_campaign_configs" in inspector.get_table_names()
+    assert "campaign_reward_grants" in inspector.get_table_names()
+
+    config_columns = {column["name"] for column in inspector.get_columns("agent_campaign_configs")}
+    grant_columns = {column["name"] for column in inspector.get_columns("campaign_reward_grants")}
+
+    assert {"created_at", "updated_at"}.issubset(config_columns)
+    assert "grant_type" in grant_columns
 
 
 def test_balance_action_exposes_campaign_bonus():
     assert BalanceAction.CAMPAIGN_BONUS.value == "campaign_bonus"
 
 
-def test_agent_campaign_config_exposes_timestamps():
-    fields = AgentCampaignConfig.model_fields
-    assert "created_at" in fields
-    assert "updated_at" in fields
+def test_runtime_schema_patch_executes_campaign_bonus_enum_sql(monkeypatch):
+    class _FakeDialect:
+        name = "postgresql"
 
+    class _FakeBind:
+        dialect = _FakeDialect()
 
-def test_runtime_schema_patch_contains_campaign_timestamp_columns():
-    patch_consts = apply_runtime_schema_patches.__code__.co_consts
-    patch_sql = " ".join([value for value in patch_consts if isinstance(value, str)])
-    assert (
-        "CREATE TABLE IF NOT EXISTS agent_campaign_configs ("
-        "id SERIAL PRIMARY KEY,"
-        "agent_id INTEGER NOT NULL UNIQUE REFERENCES agents(id),"
-        "is_enabled BOOLEAN NOT NULL DEFAULT FALSE,"
-        "starts_at TIMESTAMP NULL,"
-        "ends_at TIMESTAMP NULL,"
-        "first_deposit_bonus_rate NUMERIC(18,4) NOT NULL DEFAULT 0.0000,"
-        "first_deposit_bonus_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00,"
-        "display_title TEXT NULL,"
-        "display_subtitle TEXT NULL,"
-        "updated_by INTEGER NULL REFERENCES admin_users(id),"
-        "created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-        "updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP"
-        ")"
-    ) in patch_sql
+    class _FakeSession:
+        def __init__(self):
+            self.bind = _FakeBind()
+            self.executed = []
 
+        def exec(self, statement):
+            self.executed.append(str(statement))
 
-def test_runtime_schema_patch_contains_balance_action_campaign_bonus_enum_sql():
-    patch_consts = apply_runtime_schema_patches.__code__.co_consts
-    patch_sql = " ".join([value for value in patch_consts if isinstance(value, str)])
-    assert (
-        "DO $$ BEGIN "
-        "ALTER TYPE balanceaction ADD VALUE IF NOT EXISTS 'campaign_bonus'; "
-        "EXCEPTION WHEN duplicate_object THEN NULL; "
-        "END $$;"
-    ) in patch_sql
-    assert (
-        "CREATE TABLE IF NOT EXISTS agent_campaign_configs ("
-        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
-        "agent_id INTEGER NOT NULL,"
-        "is_enabled BOOLEAN NOT NULL DEFAULT 0,"
-        "starts_at DATETIME NULL,"
-        "ends_at DATETIME NULL,"
-        "first_deposit_bonus_rate NUMERIC(18,4) NOT NULL DEFAULT 0.0000,"
-        "first_deposit_bonus_amount NUMERIC(18,2) NOT NULL DEFAULT 0.00,"
-        "display_title TEXT NULL,"
-        "display_subtitle TEXT NULL,"
-        "updated_by INTEGER NULL,"
-        "created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-        "updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-        "UNIQUE(agent_id)"
-        ")"
-    ) in patch_sql
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+        def close(self):
+            return None
+
+    fake_session = _FakeSession()
+    monkeypatch.setattr("shared.schema_patch.get_db_session", lambda: fake_session)
+
+    apply_runtime_schema_patches()
+
+    assert any(
+        "ALTER TYPE balanceaction ADD VALUE IF NOT EXISTS 'campaign_bonus'" in statement
+        for statement in fake_session.executed
+    )
+    assert not any("uq_agent_campaign_configs_agent_id_idx" in statement for statement in fake_session.executed)
+    assert not any("uq_campaign_reward_user_bot_type_idx" in statement for statement in fake_session.executed)
