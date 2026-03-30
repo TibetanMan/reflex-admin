@@ -855,7 +855,15 @@ async def handle_recharge_amount_input(message: Message, state: FSMContext):
         else:
             expires_display = "-"
         qr = _build_recharge_qr_image(address=to_address, amount=amount)
+        campaign = payload.get("campaign") or {}
+        campaign_block = ""
+        if campaign:
+            campaign_block = (
+                f"🎁 当前活动：{campaign.get('title') or '首充活动'}\n"
+                f"{campaign.get('summary')}\n"
+            )
         caption = (
+            f"{campaign_block}"
             f"【钱包地址(TRC-20)】：\n{to_address}\n\n"
             f"充值金额：{amount:.2f} USDT\n"
             f"订单有效期：{expires_display}（UTC+8）\n\n"
@@ -934,4 +942,3 @@ async def handle_text_fallback(message: Message, state: FSMContext):
     if current_state:
         return
     await message.answer("请选择下方菜单，或输入 /help 查看帮助。")
-

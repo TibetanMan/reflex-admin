@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.agent_campaign_service import get_active_campaign_for_bot
 from services.deposit_chain_service import sync_deposit_from_chain
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
 from shared.database import get_db_session
@@ -1377,6 +1378,11 @@ def create_bot_deposit(
         session.add(deposit)
         session.commit()
         session.refresh(deposit)
+        campaign = get_active_campaign_for_bot(
+            bot_id=int(bot.id or 0),
+            now=_now(),
+            session_factory=lambda: session,
+        )
         return {
             "id": int(deposit.id or 0),
             "deposit_no": str(deposit.deposit_no),
@@ -1388,6 +1394,7 @@ def create_bot_deposit(
             "method": str(deposit.method.value if hasattr(deposit.method, "value") else deposit.method),
             "created_at": deposit.created_at.strftime("%Y-%m-%d %H:%M:%S"),
             "expires_at": deposit.expires_at.strftime("%Y-%m-%d %H:%M:%S") if deposit.expires_at else "",
+            "campaign": campaign,
         }
     except Exception:
         session.rollback()
