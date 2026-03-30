@@ -68,3 +68,39 @@ def test_runtime_schema_patch_executes_campaign_bonus_enum_sql(monkeypatch):
     )
     assert not any("uq_agent_campaign_configs_agent_id_idx" in statement for statement in fake_session.executed)
     assert not any("uq_campaign_reward_user_bot_type_idx" in statement for statement in fake_session.executed)
+
+
+def test_runtime_schema_patch_executes_sqlite_campaign_schema_sql(monkeypatch):
+    class _FakeDialect:
+        name = "sqlite"
+
+    class _FakeBind:
+        dialect = _FakeDialect()
+
+    class _FakeSession:
+        def __init__(self):
+            self.bind = _FakeBind()
+            self.executed = []
+
+        def exec(self, statement):
+            self.executed.append(str(statement))
+
+        def commit(self):
+            return None
+
+        def rollback(self):
+            return None
+
+        def close(self):
+            return None
+
+    fake_session = _FakeSession()
+    monkeypatch.setattr("shared.schema_patch.get_db_session", lambda: fake_session)
+
+    apply_runtime_schema_patches()
+
+    assert any("CREATE TABLE IF NOT EXISTS agent_campaign_configs" in statement for statement in fake_session.executed)
+    assert any("CREATE TABLE IF NOT EXISTS campaign_reward_grants" in statement for statement in fake_session.executed)
+    assert not any("ALTER TYPE balanceaction" in statement for statement in fake_session.executed)
+    assert not any("uq_agent_campaign_configs_agent_id_idx" in statement for statement in fake_session.executed)
+    assert not any("uq_campaign_reward_user_bot_type_idx" in statement for statement in fake_session.executed)
