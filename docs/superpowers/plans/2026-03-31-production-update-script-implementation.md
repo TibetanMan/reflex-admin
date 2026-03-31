@@ -31,6 +31,7 @@ def run_update_script(
     # write .env
     # copy update-prod.sh into temp repo
     # prepend fake git/docker/curl scripts to PATH
+    # set BACKUP_DIR to a temp directory under tmp_path
     # execute bash update-prod.sh with argv
 ```
 
@@ -81,13 +82,7 @@ Run: `D:\Coding\Test\test-reflex\.venv\Scripts\python.exe -m pytest tests/script
 
 Expected: FAIL because `update-prod.sh` and its mocked-command behavior do not exist yet.
 
-- [ ] **Step 4: Re-run the focused smoke tests to verify failures are now about missing script behavior**
-
-Run: `D:\Coding\Test\test-reflex\.venv\Scripts\python.exe -m pytest tests/scripts/test_update_prod.py -k "usage or dirty or success or rollback" -v`
-
-Expected: still FAIL, but now on script behavior rather than path/setup problems.
-
-- [ ] **Step 5: Commit the failing test harness**
+- [ ] **Step 4: Commit the failing test harness**
 
 ```bash
 git add tests/scripts/test_update_prod.py
@@ -157,7 +152,7 @@ NEW_SHA="$(git rev-parse HEAD)"
 - [ ] **Step 5: Add backup creation outside the repo worktree**
 
 ```bash
-BACKUP_DIR="/var/backups/test-reflex"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/test-reflex}"
 TIMESTAMP="$(date +%F-%H%M%S)"
 BACKUP_FILE="${BACKUP_DIR}/reflex-${TIMESTAMP}.sql"
 mkdir -p "${BACKUP_DIR}"
@@ -179,9 +174,32 @@ check_recent_logs_for_startup_failures
 check_http_health "http://127.0.0.1:3000"
 ```
 
-- [ ] **Step 8: Add unified error handling and rollback guidance**
+- [ ] **Step 8: Add explicit failure-state tracking**
 
 ```bash
+CURRENT_STEP="startup"
+OLD_BRANCH=""
+OLD_SHA=""
+NEW_SHA=""
+BACKUP_FILE=""
+```
+
+- [ ] **Step 9: Add an `ERR` trap that prints failure summary and rollback guidance**
+
+```bash
+on_error() {
+  local exit_code="$?"
+  echo "[ERROR] Step failed: ${CURRENT_STEP}"
+  echo "Old branch: ${OLD_BRANCH}"
+  echo "Old SHA: ${OLD_SHA}"
+  [ -n "${NEW_SHA}" ] && echo "New SHA: ${NEW_SHA}"
+  [ -n "${BACKUP_FILE}" ] && echo "Backup: ${BACKUP_FILE}"
+  print_rollback_instructions
+  exit "${exit_code}"
+}
+
+trap on_error ERR
+
 print_rollback_instructions() {
   cat <<EOF
 git checkout ${OLD_BRANCH}
@@ -192,25 +210,35 @@ EOF
 }
 ```
 
-- [ ] **Step 9: Make the script executable**
+- [ ] **Step 10: Update each major operation to set `CURRENT_STEP` before running**
+
+```bash
+CURRENT_STEP="fetching origin"
+git fetch origin
+
+CURRENT_STEP="creating postgres backup"
+docker compose exec -T postgres pg_dump -U postgres reflex > "${BACKUP_FILE}"
+```
+
+- [ ] **Step 11: Make the script executable**
 
 Run: `git update-index --chmod=+x update-prod.sh`
 
 Expected: script is tracked as executable.
 
-- [ ] **Step 10: Run the focused smoke suite**
+- [ ] **Step 12: Run the focused smoke suite**
 
 Run: `D:\Coding\Test\test-reflex\.venv\Scripts\python.exe -m pytest tests/scripts/test_update_prod.py -v`
 
 Expected: PASS
 
-- [ ] **Step 11: Run shell syntax validation**
+- [ ] **Step 13: Run shell syntax validation**
 
 Run: `bash -n update-prod.sh`
 
 Expected: exit code `0`
 
-- [ ] **Step 12: Commit the updater implementation**
+- [ ] **Step 14: Commit the updater implementation**
 
 ```bash
 git add update-prod.sh tests/scripts/test_update_prod.py
