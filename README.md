@@ -80,6 +80,15 @@ Bot supervisor 已集成到 Reflex 生命周期中，`uv run reflex run` 启动�
 - PostgreSQL (`5432`) 和 Redis (`6379`) 不应对公网开放。
 - 首次登录后请立即修改管理员密码。
 
+## 🔄 生产更新
+
+```bash
+bash update-prod.sh
+bash update-prod.sh master
+```
+
+脚本要求 Git 工作区保持干净，会先备份 PostgreSQL，再更新代码、重建并重启 `web` 服务；如果健康检查失败，会打印手动回滚指令。
+
 ## 📊 功能模块
 
 ### 后台管理
