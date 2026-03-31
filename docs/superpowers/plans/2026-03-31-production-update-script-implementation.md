@@ -62,6 +62,8 @@ def test_update_prod_success_path_prints_backup_and_sha(tmp_path: Path):
     assert "Backup:" in result.stdout
     assert "Old SHA:" in result.stdout
     assert "New SHA:" in result.stdout
+    assert "creating postgres backup" in result.stdout
+    assert result.stdout.index("creating postgres backup") < result.stdout.index("building web image")
 
 
 def test_update_prod_accepts_redirect_http_health(tmp_path: Path):
@@ -101,7 +103,7 @@ git commit -m "test: add production update script smoke harness"
 
 ```bash
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 TARGET_BRANCH="${1:-master}"
 if [ "$#" -gt 1 ]; then
@@ -114,10 +116,15 @@ fi
 
 ```bash
 require_file ".env"
+require_file "docker-compose.yml"
 require_command git
 require_command docker
 require_command curl
 docker compose version >/dev/null
+if [ "$(git rev-parse --show-toplevel)" != "$(pwd)" ]; then
+  echo "[ERROR] Please run from the repository root."
+  exit 1
+fi
 ```
 
 - [ ] **Step 3: Add strict clean-worktree enforcement**
