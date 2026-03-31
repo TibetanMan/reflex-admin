@@ -9,7 +9,7 @@ It must:
 - default to updating `origin/master`
 - allow passing a branch name override
 - refuse to run if the git worktree is dirty
-- create a timestamped PostgreSQL backup before updating
+- create a timestamped PostgreSQL backup before rebuilding or restarting services
 - record the previous and new git commit SHAs
 - rebuild and restart the `web` service
 - run post-update health checks
@@ -83,8 +83,8 @@ If any precondition is not met, the script must exit with a clear error.
 4. Resolve target branch.
 5. Record current branch and current commit SHA as rollback metadata.
 6. Fast-forward update the target branch from `origin/<branch>`.
-7. Create `backups/` if missing.
-8. Create a timestamped PostgreSQL dump in `backups/`.
+7. Create a backup directory outside the git worktree if missing.
+8. Create a timestamped PostgreSQL dump before any rebuild or restart step.
 9. Rebuild the `web` image.
 10. Restart `web` with Docker Compose.
 11. Run health checks.
@@ -102,19 +102,22 @@ If any precondition is not met, the script must exit with a clear error.
 
 ## Backup Rules
 
+Backups must not be written inside the git worktree.
+
 Backups go to:
 
 ```text
-backups/reflex-YYYY-MM-DD-HHMMSS.sql
+/var/backups/test-reflex/reflex-YYYY-MM-DD-HHMMSS.sql
 ```
 
 The backup command should use the existing Compose PostgreSQL service, for example:
 
 ```bash
-docker compose exec -T postgres pg_dump -U postgres reflex > backups/reflex-YYYY-MM-DD-HHMMSS.sql
+docker compose exec -T postgres pg_dump -U postgres reflex > /var/backups/test-reflex/reflex-YYYY-MM-DD-HHMMSS.sql
 ```
 
 If backup creation fails, the script must stop before rebuilding or restarting services.
+It does not need to stop before `git fetch` or the fast-forward code update, but it must stop before any container rebuild or restart.
 
 ## Deployment Rules
 
@@ -139,6 +142,15 @@ The script should run layered checks after restart:
    - request at least one local endpoint such as:
      - `http://127.0.0.1:3000`
      - optionally `http://127.0.0.1:8000`
+
+HTTP success means receiving a reachable response from the local service, such as HTTP `200`, `301`, `302`, `307`, or `308`.
+
+Obvious startup failure log patterns include:
+- Python tracebacks
+- unhandled exceptions
+- bind/listen failures
+- database connection failures during startup
+- process exit or crash-loop messages
 
 Health checks must be bounded with retry loops and short waits so startup delays do not cause immediate false failures.
 
@@ -219,7 +231,7 @@ Minimum success evidence before completion:
 - Running `bash update-prod.sh` updates `master` from `origin/master`.
 - Running `bash update-prod.sh <branch>` updates the specified branch from `origin/<branch>`.
 - The script exits early if the repository has uncommitted or untracked changes.
-- The script creates a timestamped SQL backup before rebuild/restart.
+- The script creates a timestamped SQL backup outside the git worktree and before rebuild/restart.
 - The script rebuilds and restarts the `web` service.
 - The script performs post-update health checks.
 - The script prints old/new commit SHAs and backup location on success.
