@@ -17,29 +17,40 @@
 - Modify: `D:\Coding\Test\test-reflex\.gitignore` only if the new test creates local cache artifacts that should be ignored
 - Reference: `D:\Coding\Test\test-reflex\docs\superpowers\specs\2026-03-31-production-update-script-design.md`
 
-- [ ] **Step 1: Write the failing smoke tests for usage, dirty-worktree rejection, success path, and rollback output**
+- [ ] **Step 1: Write the reusable mock-command test harness**
+
+```python
+def run_update_script(
+    tmp_path: Path,
+    *,
+    argv: list[str] | None = None,
+    git_status_output: str = "",
+    http_code: str = "200",
+) -> subprocess.CompletedProcess[str]:
+    # create fake repo layout
+    # write .env
+    # copy update-prod.sh into temp repo
+    # prepend fake git/docker/curl scripts to PATH
+    # execute bash update-prod.sh with argv
+```
+
+- [ ] **Step 2: Write the failing smoke tests for usage, dirty-worktree rejection, success path, redirect health-check success, and rollback output**
 
 ```python
 from __future__ import annotations
 
-import os
 import subprocess
 from pathlib import Path
 
 
 def test_update_prod_rejects_extra_arguments(tmp_path: Path):
-    result = subprocess.run(
-        ["bash", "update-prod.sh", "master", "extra"],
-        cwd=tmp_path,
-        text=True,
-        capture_output=True,
-    )
+    result = run_update_script(tmp_path, argv=["master", "extra"])
     assert result.returncode != 0
     assert "Usage:" in result.stdout + result.stderr
 
 
 def test_update_prod_rejects_dirty_worktree(tmp_path: Path):
-    result = run_update_script(tmp_path, git_status_output=" M services/reflex_api.py\n")
+    result = run_update_script(tmp_path, git_status_output="?? stray-file.txt\n")
     assert result.returncode != 0
     assert "dirty" in (result.stdout + result.stderr).lower()
 
@@ -52,39 +63,29 @@ def test_update_prod_success_path_prints_backup_and_sha(tmp_path: Path):
     assert "New SHA:" in result.stdout
 
 
+def test_update_prod_accepts_redirect_http_health(tmp_path: Path):
+    result = run_update_script(tmp_path, http_code="302")
+    assert result.returncode == 0
+
+
 def test_update_prod_failure_prints_rollback_command(tmp_path: Path):
     result = run_update_script(tmp_path, http_code="500")
     assert result.returncode != 0
+    assert "git checkout" in result.stdout + result.stderr
     assert "git reset --hard" in result.stdout + result.stderr
 ```
 
-- [ ] **Step 2: Run the focused smoke tests to verify they fail**
+- [ ] **Step 3: Run the focused smoke tests to verify they fail**
 
 Run: `D:\Coding\Test\test-reflex\.venv\Scripts\python.exe -m pytest tests/scripts/test_update_prod.py -v`
 
 Expected: FAIL because `update-prod.sh` and its mocked-command behavior do not exist yet.
 
-- [ ] **Step 3: Build the reusable mock-command test harness**
-
-```python
-def run_update_script(
-    tmp_path: Path,
-    *,
-    git_status_output: str = "",
-    http_code: str = "200",
-) -> subprocess.CompletedProcess[str]:
-    # create fake repo layout
-    # write .env
-    # copy update-prod.sh into temp repo
-    # prepend fake git/docker/curl scripts to PATH
-    # execute bash update-prod.sh
-```
-
-- [ ] **Step 4: Re-run the focused smoke tests to verify the harness is ready**
+- [ ] **Step 4: Re-run the focused smoke tests to verify failures are now about missing script behavior**
 
 Run: `D:\Coding\Test\test-reflex\.venv\Scripts\python.exe -m pytest tests/scripts/test_update_prod.py -k "usage or dirty or success or rollback" -v`
 
-Expected: still FAIL, but now on script behavior rather than missing harness pieces.
+Expected: still FAIL, but now on script behavior rather than path/setup problems.
 
 - [ ] **Step 5: Commit the failing test harness**
 
@@ -120,6 +121,7 @@ fi
 require_file ".env"
 require_command git
 require_command docker
+require_command curl
 docker compose version >/dev/null
 ```
 
@@ -182,7 +184,7 @@ check_http_health "http://127.0.0.1:3000"
 ```bash
 print_rollback_instructions() {
   cat <<EOF
-git checkout ${TARGET_BRANCH}
+git checkout ${OLD_BRANCH}
 git reset --hard ${OLD_SHA}
 docker compose build web
 docker compose up -d web
@@ -190,19 +192,25 @@ EOF
 }
 ```
 
-- [ ] **Step 9: Run the focused smoke suite**
+- [ ] **Step 9: Make the script executable**
+
+Run: `git update-index --chmod=+x update-prod.sh`
+
+Expected: script is tracked as executable.
+
+- [ ] **Step 10: Run the focused smoke suite**
 
 Run: `D:\Coding\Test\test-reflex\.venv\Scripts\python.exe -m pytest tests/scripts/test_update_prod.py -v`
 
 Expected: PASS
 
-- [ ] **Step 10: Run shell syntax validation**
+- [ ] **Step 11: Run shell syntax validation**
 
 Run: `bash -n update-prod.sh`
 
 Expected: exit code `0`
 
-- [ ] **Step 11: Commit the updater implementation**
+- [ ] **Step 12: Commit the updater implementation**
 
 ```bash
 git add update-prod.sh tests/scripts/test_update_prod.py
@@ -260,20 +268,26 @@ Run: `bash -n update-prod.sh`
 
 Expected: exit code `0`
 
-- [ ] **Step 3: Inspect the final worktree**
+- [ ] **Step 3: Verify the executable bit is tracked**
+
+Run: `git ls-files --stage update-prod.sh`
+
+Expected: mode starts with `100755`.
+
+- [ ] **Step 4: Inspect the final worktree**
 
 Run: `git status --short`
 
 Expected: no unintended files; only planned changes before final commit, then clean after commit.
 
-- [ ] **Step 4: Summarize operator-facing usage**
+- [ ] **Step 5: Summarize operator-facing usage**
 
 ```text
 bash update-prod.sh
 bash update-prod.sh <branch>
 ```
 
-- [ ] **Step 5: Final commit if verification fixes were needed**
+- [ ] **Step 6: Final commit if verification fixes were needed**
 
 ```bash
 git add update-prod.sh tests/scripts/test_update_prod.py README.md
