@@ -111,7 +111,7 @@ def agent_verify_badge(agent: dict) -> rx.Component:
 
 
 def campaign_status_badge(agent: dict) -> rx.Component:
-    status = agent["campaign"]["status"]
+    status = agent["campaign_status"]
     return rx.match(
         status,
         ("active", rx.badge("进行中", color_scheme="green", variant="soft")),
@@ -162,12 +162,12 @@ def render_agent_row(agent: dict) -> rx.Component:
             rx.vstack(
                 campaign_status_badge(agent),
                 rx.text(
-                    rx.cond(agent["campaign"]["summary"], agent["campaign"]["summary"], "未配置活动"),
+                    rx.cond(agent["campaign_summary"], agent["campaign_summary"], "未配置活动"),
                     size="1",
                     color=rx.color("gray", 11),
                 ),
                 rx.text(
-                    rx.cond(agent["campaign"]["display_title"], agent["campaign"]["display_title"], "-"),
+                    rx.cond(agent["campaign_title"], agent["campaign_title"], "-"),
                     size="1",
                     color=rx.color("gray", 10),
                 ),

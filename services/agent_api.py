@@ -10,7 +10,7 @@ from services.http_api_client import request_json
 def _normalize_agent_row(item: Any) -> dict[str, Any]:
     row = dict(item) if isinstance(item, dict) else {}
     campaign = dict(row.get("campaign") or {})
-    row["campaign"] = {
+    normalized_campaign = {
         "agent_id": int(row.get("id") or 0),
         "is_enabled": bool(campaign.get("is_enabled", False)),
         "status": str(campaign.get("status") or "disabled"),
@@ -22,6 +22,10 @@ def _normalize_agent_row(item: Any) -> dict[str, Any]:
         "first_deposit_bonus_rate": float(campaign.get("first_deposit_bonus_rate") or 0),
         "first_deposit_bonus_amount": float(campaign.get("first_deposit_bonus_amount") or 0),
     }
+    row["campaign"] = normalized_campaign
+    row["campaign_status"] = normalized_campaign["status"]
+    row["campaign_summary"] = normalized_campaign["summary"]
+    row["campaign_title"] = normalized_campaign["display_title"]
     return row
 
 
