@@ -30,6 +30,9 @@ from services.admin_account_service import (
     create_admin_account as create_admin_account_service,
 )
 from services.inventory_service import (
+    append_inventory_library_items as append_inventory_library_items_service,
+)
+from services.inventory_service import (
     delete_inventory_library as delete_inventory_library_service,
 )
 from services.inventory_service import (
@@ -292,6 +295,7 @@ from services.export_task import (
 _PRICE_PATH_RE = re.compile(r"^/api/v1/inventory/libraries/(\d+)/price$")
 _STATUS_PATH_RE = re.compile(r"^/api/v1/inventory/libraries/(\d+)/status$")
 _DELETE_PATH_RE = re.compile(r"^/api/v1/inventory/libraries/(\d+)$")
+_APPEND_PATH_RE = re.compile(r"^/api/v1/inventory/libraries/(\d+)/append$")
 _INVENTORY_LIBRARY_ITEMS_RE = re.compile(r"^/api/v1/inventory/libraries/(\d+)/items$")
 _INVENTORY_IMPORT_TASK_RE = re.compile(r"^/api/v1/inventory/import-tasks/(\d+)$")
 _BOT_ITEM_RE = re.compile(r"^/api/v1/bots/(\d+)$")
@@ -472,6 +476,18 @@ def dispatch_request(
             category_name=str(body.get("category_name") or ""),
             unit_price=float(body.get("unit_price") or 0),
             pick_price=float(body.get("pick_price") or 0),
+            delimiter=str(body.get("delimiter") or "|"),
+            content=str(body.get("content") or ""),
+            push_ad=bool(body.get("push_ad", False)),
+            operator_username=str(body.get("operator_username") or "").strip(),
+            source_filename=str(body.get("source_filename") or "inventory_upload.txt"),
+        )
+
+    matched = _APPEND_PATH_RE.fullmatch(p)
+    if m == "POST" and matched:
+        inventory_id = int(matched.group(1))
+        return append_inventory_library_items_service(
+            inventory_id=inventory_id,
             delimiter=str(body.get("delimiter") or "|"),
             content=str(body.get("content") or ""),
             push_ad=bool(body.get("push_ad", False)),
@@ -683,17 +699,23 @@ def dispatch_request(
             token=str(body.get("token") or ""),
             owner_name=str(body.get("owner_name") or "平台自营"),
             usdt_address=str(body.get("usdt_address") or ""),
+            welcome_message=str(body.get("welcome_message") or ""),
         )
 
     matched = _BOT_ITEM_RE.fullmatch(p)
     if m == "PATCH" and matched:
         bot_id = int(matched.group(1))
-        return update_bot_record_service(
-            bot_id=bot_id,
-            name=str(body.get("name") or ""),
-            owner_name=str(body.get("owner_name") or "平台自营"),
-            usdt_address=str(body.get("usdt_address") or ""),
-        )
+        update_kwargs: dict[str, Any] = {
+            "bot_id": bot_id,
+            "name": str(body.get("name") or ""),
+            "owner_name": str(body.get("owner_name") or "平台自营"),
+            "usdt_address": str(body.get("usdt_address") or ""),
+        }
+        if "welcome_message" in body:
+            update_kwargs["welcome_message"] = (
+                "" if body.get("welcome_message") is None else str(body.get("welcome_message"))
+            )
+        return update_bot_record_service(**update_kwargs)
 
     matched = _BOT_STATUS_RE.fullmatch(p)
     if m == "PATCH" and matched:

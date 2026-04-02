@@ -114,6 +114,16 @@ def bot_enabled_badge(item: InventoryItem) -> rx.Component:
 def action_buttons(item: InventoryItem) -> rx.Component:
     """操作按钮"""
     return rx.hstack(
+        rx.tooltip(
+            rx.icon_button(
+                rx.icon("upload", size=14),
+                size="1",
+                variant="soft",
+                color_scheme="blue",
+                on_click=lambda: with_focus_blur(InventoryState.open_append_modal(item.id)),
+            ),
+            content="更新库",
+        ),
         # 更改价格
         rx.tooltip(
             rx.icon_button(
@@ -549,6 +559,222 @@ def import_modal() -> rx.Component:
     )
 
 
+def append_modal() -> rx.Component:
+    """更新库存弹窗"""
+    return rx.dialog.root(
+        rx.dialog.trigger(rx.box()),
+        rx.dialog.content(
+            rx.dialog.title("更新库"),
+            rx.dialog.description(
+                "向现有库存库中追加更多销售商品，不会新建第二个库存行。",
+                size="2",
+                color=rx.color("gray", 11),
+            ),
+            rx.scroll_area(
+                rx.vstack(
+                    rx.grid(
+                        rx.vstack(
+                            rx.text("库名称", size="2", weight="medium"),
+                            rx.box(
+                                rx.text(InventoryState.append_name, size="2"),
+                                width="100%",
+                                padding="10px 12px",
+                                background=rx.color("gray", 2),
+                                border_radius="8px",
+                            ),
+                            align="start",
+                            spacing="1",
+                            width="100%",
+                        ),
+                        rx.vstack(
+                            rx.text("商家绑定", size="2", weight="medium"),
+                            rx.box(
+                                rx.text(InventoryState.append_merchant, size="2"),
+                                width="100%",
+                                padding="10px 12px",
+                                background=rx.color("gray", 2),
+                                border_radius="8px",
+                            ),
+                            align="start",
+                            spacing="1",
+                            width="100%",
+                        ),
+                        columns="2",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    rx.grid(
+                        rx.vstack(
+                            rx.text("库存分类", size="2", weight="medium"),
+                            rx.box(
+                                rx.text(InventoryState.append_category, size="2"),
+                                width="100%",
+                                padding="10px 12px",
+                                background=rx.color("gray", 2),
+                                border_radius="8px",
+                            ),
+                            align="start",
+                            spacing="1",
+                            width="100%",
+                        ),
+                        rx.vstack(
+                            rx.text("当前价格", size="2", weight="medium"),
+                            rx.box(
+                                rx.text(
+                                    f"${InventoryState.append_unit_price} / 挑头 ${InventoryState.append_pick_price}",
+                                    size="2",
+                                ),
+                                width="100%",
+                                padding="10px 12px",
+                                background=rx.color("gray", 2),
+                                border_radius="8px",
+                            ),
+                            align="start",
+                            spacing="1",
+                            width="100%",
+                        ),
+                        columns="2",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        rx.text("分隔符:", size="2", weight="medium"),
+                        rx.radio_group(
+                            ["| (竖线)", ": (冒号)", ", (逗号)"],
+                            default_value="| (竖线)",
+                            on_change=InventoryState.set_append_delimiter,
+                            direction="row",
+                        ),
+                        width="100%",
+                    ),
+                    rx.upload(
+                        rx.vstack(
+                            rx.icon("upload", size=40, color=rx.color("gray", 8)),
+                            rx.text("拖放追加文件到此处或点击上传", size="2"),
+                            rx.text("支持 .txt, .csv 格式", size="1", color=rx.color("gray", 11)),
+                            align="center",
+                            spacing="2",
+                        ),
+                        id="inventory_append_upload",
+                        accept=INVENTORY_UPLOAD_ACCEPT,
+                        max_files=1,
+                        border=f"2px dashed {rx.color('gray', 6)}",
+                        border_radius="12px",
+                        padding="24px",
+                        width="100%",
+                        on_drop=InventoryState.handle_append_file_upload(
+                            rx.upload_files(upload_id="inventory_append_upload")
+                        ),
+                    ),
+                    rx.box(
+                        rx.hstack(
+                            rx.switch(
+                                checked=InventoryState.append_push_ad,
+                                on_change=InventoryState.set_append_push_ad,
+                            ),
+                            rx.vstack(
+                                rx.text("推送广告", size="2", weight="medium"),
+                                rx.text("追加完成后是否推送广告通知", size="1", color=rx.color("gray", 11)),
+                                align="start",
+                                spacing="0",
+                            ),
+                            spacing="3",
+                            align="center",
+                        ),
+                        width="100%",
+                        padding="12px",
+                        background=rx.color("gray", 2),
+                        border_radius="8px",
+                    ),
+                    rx.cond(
+                        InventoryState.has_append_preview,
+                        rx.box(
+                            rx.text("追加预览 (前5行)", size="2", weight="bold", margin_bottom="8px"),
+                            rx.table.root(
+                                rx.table.header(
+                                    rx.table.row(
+                                        rx.table.column_header_cell("#"),
+                                        rx.table.column_header_cell("原始数据"),
+                                        rx.table.column_header_cell("字段数"),
+                                        rx.table.column_header_cell("BIN"),
+                                    ),
+                                ),
+                                rx.table.body(
+                                    rx.foreach(
+                                        InventoryState.append_preview_data,
+                                        lambda item: rx.table.row(
+                                            rx.table.cell(item["index"]),
+                                            rx.table.cell(rx.code(item["raw"], size="1")),
+                                            rx.table.cell(item["fields"]),
+                                            rx.table.cell(rx.code(item["bin"])),
+                                        ),
+                                    ),
+                                ),
+                                width="100%",
+                                size="1",
+                            ),
+                            background=rx.color("gray", 2),
+                            padding="12px",
+                            border_radius="8px",
+                        ),
+                    ),
+                    rx.cond(
+                        InventoryState.has_append_result,
+                        rx.box(
+                            rx.text("更新结果", size="2", weight="bold", margin_bottom="8px"),
+                            rx.hstack(
+                                rx.badge(f"总计: {InventoryState.append_result['total']}", color_scheme="gray"),
+                                rx.badge(f"成功: {InventoryState.append_result['success']}", color_scheme="green"),
+                                rx.badge(f"重复: {InventoryState.append_result['duplicate']}", color_scheme="orange"),
+                                rx.badge(f"无效: {InventoryState.append_result['invalid']}", color_scheme="red"),
+                                spacing="2",
+                            ),
+                            background=rx.color("blue", 2),
+                            padding="12px",
+                            border_radius="8px",
+                        ),
+                    ),
+                    rx.cond(
+                        InventoryState.is_appending,
+                        rx.box(
+                            rx.progress(value=InventoryState.append_progress, width="100%"),
+                            rx.text(
+                                f"更新中... {InventoryState.append_progress}%",
+                                size="1",
+                                color=rx.color("gray", 11),
+                                text_align="center",
+                            ),
+                        ),
+                    ),
+                    width="100%",
+                    spacing="4",
+                ),
+                max_height="60vh",
+                scrollbars="vertical",
+            ),
+            rx.hstack(
+                rx.button(
+                    "取消",
+                    variant="soft",
+                    color_scheme="gray",
+                    on_click=InventoryState.close_append_modal,
+                ),
+                rx.spacer(),
+                rx.button(
+                    "追加商品",
+                    on_click=InventoryState.submit_append_import(AuthState.username),
+                    loading=InventoryState.is_appending,
+                    disabled=~InventoryState.can_submit_append_import,
+                ),
+                width="100%",
+                margin_top="16px",
+            ),
+            max_width="650px",
+        ),
+        open=InventoryState.show_append_modal,
+    )
+
+
 def price_edit_modal() -> rx.Component:
     """价格编辑弹窗 - 带二次确认"""
     return rx.dialog.root(
@@ -669,10 +895,11 @@ def inventory_page() -> rx.Component:
         
         # 弹窗
         import_modal(),
+        append_modal(),
         price_edit_modal(),
         delete_confirm_modal(),
         
         width="100%",
         spacing="4",
-        on_mount=InventoryState.load_inventory_data,
+        on_mount=InventoryState.handle_inventory_page_load,
     )

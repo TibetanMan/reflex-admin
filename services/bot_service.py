@@ -79,6 +79,7 @@ def _to_row(
         "runtime_selected": _is_active_enabled(bot),
         "owner": _owner_name(bot, agent_map),
         "usdt_address": str(bot.usdt_address or ""),
+        "welcome_message": str(bot.welcome_message or ""),
         "users": int(user_count_map.get(bot_id, int(bot.total_users or 0))),
         "orders": int(order_count_map.get(bot_id, int(bot.total_orders or 0))),
         "revenue": float(revenue_map.get(bot_id, float(bot.total_revenue or 0))),
@@ -204,6 +205,32 @@ def list_runtime_bot_bindings(
         session.close()
 
 
+def get_runtime_active_bot_by_token(
+    *,
+    token: str,
+    session_factory: Optional[Callable[[], Session]] = None,
+) -> Optional[dict[str, Any]]:
+    token_text = str(token or "").strip()
+    if not token_text:
+        return None
+
+    make_session = session_factory or get_db_session
+    session = make_session()
+    try:
+        bot = session.exec(select(BotInstance).where(BotInstance.token == token_text)).first()
+        if bot is None or not _is_active_enabled(bot):
+            return None
+        return {
+            "id": int(bot.id or 0),
+            "name": str(bot.name or "Runtime Bot"),
+            "username": str(bot.username or ""),
+            "token": str(bot.token or ""),
+            "welcome_message": str(bot.welcome_message or ""),
+        }
+    finally:
+        session.close()
+
+
 def resolve_runtime_bot_binding(
     *,
     preferred_token: str = "",
@@ -273,6 +300,7 @@ def create_bot_record(
     token: str,
     owner_name: str,
     usdt_address: str,
+    welcome_message: str = "",
     session_factory: Optional[Callable[[], Session]] = None,
 ) -> dict[str, Any]:
     name_text = str(name or "").strip()
@@ -291,6 +319,7 @@ def create_bot_record(
 
         owner_agent_id, is_platform_bot = _resolve_owner_name(session, owner_name)
         username = re.sub(r"[^a-zA-Z0-9_]+", "_", name_text.lower()).strip("_")
+        welcome_text = "" if welcome_message is None else str(welcome_message)
 
         bot = BotInstance(
             token=token_text,
@@ -299,6 +328,7 @@ def create_bot_record(
             owner_agent_id=owner_agent_id,
             is_platform_bot=is_platform_bot,
             usdt_address=str(usdt_address or "").strip() or None,
+            welcome_message=welcome_text if welcome_text != "" else None,
             status=BotStatus.INACTIVE,
             is_enabled=False,
             total_users=0,
@@ -330,6 +360,7 @@ def update_bot_record(
     name: str,
     owner_name: str,
     usdt_address: str,
+    welcome_message: Optional[str] = None,
     session_factory: Optional[Callable[[], Session]] = None,
 ) -> dict[str, Any]:
     name_text = str(name or "").strip()
@@ -348,6 +379,9 @@ def update_bot_record(
         bot.owner_agent_id = owner_agent_id
         bot.is_platform_bot = is_platform_bot
         bot.usdt_address = str(usdt_address or "").strip() or None
+        if welcome_message is not None:
+            welcome_text = str(welcome_message)
+            bot.welcome_message = welcome_text if welcome_text != "" else None
         bot.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         session.add(bot)
         session.flush()

@@ -25,6 +25,7 @@ _ROUTE_POLICIES: tuple[RoutePolicy, ...] = (
     RoutePolicy("POST", re.compile(r"^/api/v1/users/\d+/balance-adjustments$"), require_auth=True),
     RoutePolicy("POST", re.compile(r"^/api/v1/users/\d+/balance-adjust$"), require_auth=True),
     RoutePolicy("POST", re.compile(r"^/api/v1/inventory/libraries/import$"), require_auth=True),
+    RoutePolicy("POST", re.compile(r"^/api/v1/inventory/libraries/\d+/append$"), require_auth=True),
     RoutePolicy("PATCH", re.compile(r"^/api/v1/inventory/libraries/\d+/price$"), require_auth=True),
     RoutePolicy("PATCH", re.compile(r"^/api/v1/inventory/libraries/\d+/status$"), require_auth=True),
     RoutePolicy("DELETE", re.compile(r"^/api/v1/inventory/libraries/\d+$"), require_auth=True),

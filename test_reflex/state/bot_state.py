@@ -30,6 +30,7 @@ class BotInfo(BaseModel):
     runtime_selected: bool = False
     owner: str
     usdt_address: str = ""
+    welcome_message: str = ""
     users: int = 0
     orders: int = 0
     revenue: float = 0.0
@@ -109,6 +110,7 @@ class BotState(rx.State):
         self.form_name = bot.name
         self.form_owner = bot.owner or self._default_owner()
         self.form_usdt_address = bot.usdt_address or ""
+        self.form_welcome_message = bot.welcome_message or ""
         self.show_edit_modal = True
 
     def close_edit_modal(self):
@@ -118,6 +120,7 @@ class BotState(rx.State):
         self.form_name = ""
         self.form_owner = self._default_owner()
         self.form_usdt_address = ""
+        self.form_welcome_message = ""
 
     def open_delete_modal(self, bot_id: int):
         bot = self._find_bot(bot_id)
@@ -165,6 +168,7 @@ class BotState(rx.State):
                 token=self.form_token.strip(),
                 owner_name=self.form_owner.strip() or "平台自营",
                 usdt_address=self.form_usdt_address.strip(),
+                welcome_message=self.form_welcome_message,
             )
         except ValueError as exc:
             return rx.toast.error(str(exc), duration=2500)
@@ -185,6 +189,7 @@ class BotState(rx.State):
                 name=self.form_name.strip(),
                 owner_name=self.form_owner.strip() or "平台自营",
                 usdt_address=self.form_usdt_address.strip(),
+                welcome_message=self.form_welcome_message,
             )
         except ValueError as exc:
             return rx.toast.error(str(exc), duration=2500)

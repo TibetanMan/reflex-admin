@@ -311,6 +311,82 @@ def list_inventory_library_items(
         session.close()
 
 
+def _import_lines_into_library(
+    session: Session,
+    *,
+    library: InventoryLibrary,
+    category_id: int,
+    merchant_id: int,
+    unit_price: Decimal | float | int | str,
+    pick_price: Decimal | float | int | str,
+    delimiter: str,
+    content: str,
+    task_id: int,
+    item_status: ProductStatus = ProductStatus.AVAILABLE,
+    locked_by_user_id: Optional[int] = None,
+    locked_at: Optional[datetime] = None,
+    lock_expires_at: Optional[datetime] = None,
+) -> tuple[int, int, int, int]:
+    existing_hashes = {
+        _extract_data_hash(item)
+        for item in session.exec(select(ProductItem.data_hash)).all()
+        if _extract_data_hash(item)
+    }
+    batch_hashes: set[str] = set()
+
+    lines = [line.strip() for line in str(content or "").splitlines() if line.strip()]
+    total = len(lines)
+    success = 0
+    duplicate = 0
+    invalid = 0
+
+    for index, line in enumerate(lines, start=1):
+        parts = [part.strip() for part in line.split(delimiter)]
+        card_number = "".join(ch for ch in (parts[0] if parts else "") if ch.isdigit())
+        country_code = _normalize_country_code(parts[4] if len(parts) > 4 else "")
+        if len(card_number) < 13:
+            invalid += 1
+            session.add(
+                InventoryImportLineError(
+                    task_id=int(task_id),
+                    line_number=index,
+                    raw_line=line[:3000],
+                    error_reason="invalid_card_number",
+                )
+            )
+            continue
+
+        data_hash = hashlib.sha256(line.encode("utf-8")).hexdigest()
+        if data_hash in batch_hashes or data_hash in existing_hashes:
+            duplicate += 1
+            continue
+
+        batch_hashes.add(data_hash)
+        existing_hashes.add(data_hash)
+        session.add(
+            ProductItem(
+                raw_data=line,
+                data_hash=data_hash,
+                bin_number=card_number[:6],
+                category_id=int(category_id),
+                country_code=country_code,
+                supplier_id=int(merchant_id),
+                inventory_library_id=int(library.id or 0),
+                cost_price=float(_money(pick_price)),
+                selling_price=float(_money(unit_price)),
+                status=item_status,
+                locked_by_user_id=locked_by_user_id,
+                locked_at=locked_at,
+                lock_expires_at=lock_expires_at,
+                created_at=_now(),
+                updated_at=_now(),
+            )
+        )
+        success += 1
+
+    return total, success, duplicate, invalid
+
+
 def import_inventory_library(
     *,
     name: str,
@@ -338,6 +414,7 @@ def import_inventory_library(
         merchant = _resolve_merchant(session, merchant_name)
         category = _resolve_category(session, category_name)
         operator = _resolve_operator(session, operator_username)
+        merchant_name_text = str(merchant.name)
 
         library = InventoryLibrary(
             name=name_text,
@@ -374,59 +451,18 @@ def import_inventory_library(
         session.add(task)
         session.flush()
 
-        existing_hashes = {
-            _extract_data_hash(item)
-            for item in session.exec(select(ProductItem.data_hash)).all()
-            if _extract_data_hash(item)
-        }
-        batch_hashes: set[str] = set()
-
-        lines = [line.strip() for line in str(content or "").splitlines() if line.strip()]
-        total = len(lines)
-        success = 0
-        duplicate = 0
-        invalid = 0
-
-        for index, line in enumerate(lines, start=1):
-            parts = [part.strip() for part in line.split(delim)]
-            card_number = "".join(ch for ch in (parts[0] if parts else "") if ch.isdigit())
-            country_code = _normalize_country_code(parts[4] if len(parts) > 4 else "")
-            if len(card_number) < 13:
-                invalid += 1
-                session.add(
-                    InventoryImportLineError(
-                        task_id=int(task.id or 0),
-                        line_number=index,
-                        raw_line=line[:3000],
-                        error_reason="invalid_card_number",
-                    )
-                )
-                continue
-
-            data_hash = hashlib.sha256(line.encode("utf-8")).hexdigest()
-            if data_hash in batch_hashes or data_hash in existing_hashes:
-                duplicate += 1
-                continue
-
-            batch_hashes.add(data_hash)
-            existing_hashes.add(data_hash)
-            session.add(
-                ProductItem(
-                    raw_data=line,
-                    data_hash=data_hash,
-                    bin_number=card_number[:6],
-                    category_id=int(category.id or 0),
-                    country_code=country_code,
-                    supplier_id=int(merchant.id or 0),
-                    inventory_library_id=int(library.id or 0),
-                    cost_price=float(_money(pick_price)),
-                    selling_price=float(_money(unit_price)),
-                    status=ProductStatus.AVAILABLE,
-                    created_at=_now(),
-                    updated_at=_now(),
-                )
-            )
-            success += 1
+        total, success, duplicate, invalid = _import_lines_into_library(
+            session,
+            library=library,
+            category_id=int(category.id or 0),
+            merchant_id=int(merchant.id or 0),
+            unit_price=unit_price,
+            pick_price=pick_price,
+            delimiter=delim,
+            content=content,
+            task_id=int(task.id or 0),
+            item_status=ProductStatus.AVAILABLE,
+        )
 
         _refresh_library_counts(session, library)
 
@@ -472,7 +508,7 @@ def import_inventory_library(
         register_inventory_review_task(
             inventory_id=int(library.id or 0),
             inventory_name=name_text,
-            merchant_name=str(merchant.name),
+            merchant_name=merchant_name_text,
             source="inventory_import",
         )
 
@@ -480,6 +516,147 @@ def import_inventory_library(
     row = next((item for item in rows if int(item["id"]) == int(library.id or 0)), None)
     if row is None:
         raise ValueError("Imported inventory not found.")
+
+    return {
+        "library": row,
+        "task_id": int(task.id or 0),
+        "result": {
+            "total": int(task.total or 0),
+            "success": int(task.success or 0),
+            "duplicate": int(task.duplicate or 0),
+            "invalid": int(task.invalid or 0),
+        },
+    }
+
+
+def append_inventory_library_items(
+    *,
+    inventory_id: int,
+    delimiter: str,
+    content: str,
+    push_ad: bool,
+    operator_username: str,
+    source_filename: str,
+    session_factory: Optional[Callable[[], Session]] = None,
+) -> dict[str, Any]:
+    if not str(content or "").strip():
+        raise ValueError("Import file is empty.")
+
+    delim = str(delimiter or "|").strip() or "|"
+    make_session = session_factory or get_db_session
+    session = make_session()
+    try:
+        library = session.exec(
+            select(InventoryLibrary).where(InventoryLibrary.id == int(inventory_id))
+        ).first()
+        if library is None:
+            raise ValueError("Inventory library not found.")
+
+        merchant = session.exec(select(Merchant).where(Merchant.id == int(library.merchant_id))).first()
+        if merchant is None:
+            raise ValueError("Merchant not found.")
+        category = session.exec(select(Category).where(Category.id == int(library.category_id))).first()
+        if category is None:
+            raise ValueError("Inventory category is invalid.")
+        operator = _resolve_operator(session, operator_username)
+        merchant_name_text = str(merchant.name)
+        library_name_text = str(library.name)
+        import_status = ProductStatus.AVAILABLE
+        locked_by_user_id: Optional[int] = None
+        locked_at: Optional[datetime] = None
+        lock_expires_at: Optional[datetime] = None
+        if library.status == InventoryLibraryStatus.INACTIVE:
+            import_status = ProductStatus.LOCKED
+            locked_by_user_id = int(operator.id or 0) if operator else 0
+            locked_at = _now()
+            lock_expires_at = locked_at + timedelta(days=3650)
+
+        task = InventoryImportTask(
+            library_id=int(library.id or 0),
+            operator_id=int(operator.id or 0) if operator else None,
+            source_filename=str(source_filename or "").strip() or "inventory_upload.txt",
+            delimiter=delim,
+            push_ad_enabled=bool(push_ad),
+            total=0,
+            success=0,
+            duplicate=0,
+            invalid=0,
+            status=InventoryImportTaskStatus.PROCESSING,
+            started_at=_now(),
+            created_at=_now(),
+            updated_at=_now(),
+        )
+        session.add(task)
+        session.flush()
+
+        total, success, duplicate, invalid = _import_lines_into_library(
+            session,
+            library=library,
+            category_id=int(category.id or 0),
+            merchant_id=int(merchant.id or 0),
+            unit_price=library.unit_price,
+            pick_price=library.pick_price,
+            delimiter=delim,
+            content=content,
+            task_id=int(task.id or 0),
+            item_status=import_status,
+            locked_by_user_id=locked_by_user_id,
+            locked_at=locked_at,
+            lock_expires_at=lock_expires_at,
+        )
+
+        _refresh_library_counts(session, library)
+
+        task.total = total
+        task.success = success
+        task.duplicate = duplicate
+        task.invalid = invalid
+        task.status = InventoryImportTaskStatus.COMPLETED
+        task.finished_at = _now()
+        task.updated_at = _now()
+        session.add(task)
+        _add_inventory_audit_log(
+            session,
+            operator=operator,
+            action="inventory.append_items",
+            target_id=int(library.id or 0),
+            request_id=_request_id("inventory-append", int(library.id or 0)),
+            detail_json=(
+                '{"inventory_id":%d,"task_id":%d,"total":%d,"success":%d,'
+                '"duplicate":%d,"invalid":%d,"source_file":"%s"}'
+                % (
+                    int(library.id or 0),
+                    int(task.id or 0),
+                    int(total),
+                    int(success),
+                    int(duplicate),
+                    int(invalid),
+                    _json_safe(source_filename),
+                )
+            ),
+        )
+
+        session.commit()
+        session.refresh(library)
+        session.refresh(task)
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+
+    if push_ad:
+        register_inventory_review_task(
+            inventory_id=int(library.id or 0),
+            inventory_name=library_name_text,
+            merchant_name=merchant_name_text,
+            source="inventory_import",
+        )
+
+    rows = list_inventory_snapshot(session_factory=session_factory)
+    row = next((item for item in rows if int(item["id"]) == int(library.id or 0)), None)
+    if row is None:
+        raise ValueError("Inventory library not found.")
 
     return {
         "library": row,

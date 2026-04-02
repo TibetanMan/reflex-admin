@@ -31,6 +31,7 @@ def create_bot_record(
     token: str,
     owner_name: str,
     usdt_address: str,
+    welcome_message: str = "",
     session_factory: Optional[Any] = None,
 ) -> dict[str, Any]:
     del session_factory
@@ -42,6 +43,7 @@ def create_bot_record(
             "token": token,
             "owner_name": owner_name,
             "usdt_address": usdt_address,
+            "welcome_message": welcome_message,
         },
     )
     return dict(data) if isinstance(data, dict) else {}
@@ -53,17 +55,21 @@ def update_bot_record(
     name: str,
     owner_name: str,
     usdt_address: str,
+    welcome_message: Optional[str] = None,
     session_factory: Optional[Any] = None,
 ) -> dict[str, Any]:
     del session_factory
+    payload = {
+        "name": name,
+        "owner_name": owner_name,
+        "usdt_address": usdt_address,
+    }
+    if welcome_message is not None:
+        payload["welcome_message"] = welcome_message
     data = request_json(
         "PATCH",
         f"/api/v1/bots/{int(bot_id)}",
-        {
-            "name": name,
-            "owner_name": owner_name,
-            "usdt_address": usdt_address,
-        },
+        payload,
     )
     return dict(data) if isinstance(data, dict) else {}
 

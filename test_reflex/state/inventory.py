@@ -9,6 +9,7 @@ import reflex as rx
 from pydantic import BaseModel
 
 from services.inventory_api import (
+    append_inventory_library_items,
     delete_inventory_library,
     import_inventory_library,
     list_inventory_filter_options,
@@ -56,8 +57,8 @@ class InventoryState(rx.State):
 
     merchant_names: List[str] = []
     inventory_categories: List[str] = FIXED_INVENTORY_CATEGORIES
-    status_options: List[str] = ["鍏ㄩ儴", "鍙敭", "鍋滃敭"]
-    merchant_filter_options: List[str] = ["鍏ㄩ儴"]
+    status_options: List[str] = ["全部", "可售", "停售"]
+    merchant_filter_options: List[str] = ["全部"]
 
     is_importing: bool = False
     import_progress: int = 0
@@ -65,6 +66,8 @@ class InventoryState(rx.State):
     upload_file_content: str = ""
     delimiter: str = "|"
     preview_data: List[Dict[str, Any]] = []
+    append_delimiter: str = "|"
+    append_preview_data: List[Dict[str, Any]] = []
 
     import_name: str = ""
     import_merchant: str = ""
@@ -72,14 +75,26 @@ class InventoryState(rx.State):
     import_unit_price: float = 0.0
     import_pick_price: float = 0.0
     import_push_ad: bool = False
+    append_inventory_id: Optional[int] = None
+    append_name: str = ""
+    append_merchant: str = ""
+    append_category: str = ""
+    append_unit_price: float = 0.0
+    append_pick_price: float = 0.0
+    append_push_ad: bool = False
+    append_upload_file_content: str = ""
+    append_result: Dict[str, int] = {}
 
     show_import_modal: bool = False
+    show_append_modal: bool = False
     open_import_modal_on_load: bool = False
     show_delete_modal: bool = False
     show_price_modal: bool = False
     selected_item_id: Optional[int] = None
     edit_unit_price: float = 0.0
     edit_pick_price: float = 0.0
+    is_appending: bool = False
+    append_progress: int = 0
 
     def _default_merchant_name(self) -> str:
         if DEFAULT_IMPORT_MERCHANT in self.merchant_names:
@@ -87,6 +102,58 @@ class InventoryState(rx.State):
         if self.merchant_names:
             return self.merchant_names[0]
         return DEFAULT_IMPORT_MERCHANT
+
+    def _find_inventory_item(self, item_id: int) -> Optional[InventoryItem]:
+        for item in self.inventory_items:
+            if int(item.id) == int(item_id):
+                return item
+        return None
+
+    def _build_preview_data(self, content: str, delimiter: str) -> List[Dict[str, Any]]:
+        lines = str(content or "").strip().splitlines()[:5]
+        rows: List[Dict[str, Any]] = []
+        for index, line in enumerate(lines, start=1):
+            raw = line.strip()
+            parts = raw.split(delimiter) if raw else []
+            rows.append(
+                {
+                    "index": index,
+                    "raw": raw[:80] + ("..." if len(raw) > 80 else ""),
+                    "fields": len(parts),
+                    "bin": "".join(ch for ch in (parts[0] if parts else "") if ch.isdigit())[:6],
+                }
+            )
+        return rows
+
+    def _decode_upload_content(self, content: bytes) -> str:
+        for encoding in ("utf-8-sig", "utf-8", "gb18030", "gbk"):
+            try:
+                return content.decode(encoding)
+            except UnicodeDecodeError:
+                continue
+        return content.decode("utf-8", errors="replace")
+
+    def _reset_import_state(self):
+        self.upload_file_content = ""
+        self.preview_data = []
+        self.import_result = {}
+        self.is_importing = False
+        self.import_progress = 0
+
+    def _reset_append_state(self):
+        self.append_inventory_id = None
+        self.append_name = ""
+        self.append_merchant = ""
+        self.append_category = ""
+        self.append_unit_price = 0.0
+        self.append_pick_price = 0.0
+        self.append_push_ad = False
+        self.append_upload_file_content = ""
+        self.append_preview_data = []
+        self.append_result = {}
+        self.append_delimiter = "|"
+        self.is_appending = False
+        self.append_progress = 0
 
     def load_inventory_data(self):
         try:
@@ -96,14 +163,14 @@ class InventoryState(rx.State):
             self.inventory_items = []
             self.merchant_names = []
             self.inventory_categories = list(FIXED_INVENTORY_CATEGORIES)
-            self.merchant_filter_options = ["鍏ㄩ儴"]
+            self.merchant_filter_options = ["全部"]
             return
 
         self.inventory_items = [InventoryItem(**item) for item in rows]
         self.merchant_names = list(options.get("merchant_names") or [])
         categories = list(options.get("category_names") or [])
         self.inventory_categories = categories if categories else list(FIXED_INVENTORY_CATEGORIES)
-        self.merchant_filter_options = ["鍏ㄩ儴"] + self.merchant_names
+        self.merchant_filter_options = ["全部"] + self.merchant_names
 
         if not self.import_merchant:
             self.import_merchant = self._default_merchant_name()
@@ -215,6 +282,23 @@ class InventoryState(rx.State):
             self.delimiter = ","
         else:
             self.delimiter = "|"
+        if self.upload_file_content:
+            self.preview_data = self._build_preview_data(self.upload_file_content, self.delimiter)
+
+    def set_append_delimiter(self, value: str):
+        if "|" in value:
+            self.append_delimiter = "|"
+        elif ":" in value:
+            self.append_delimiter = ":"
+        elif "," in value:
+            self.append_delimiter = ","
+        else:
+            self.append_delimiter = "|"
+        if self.append_upload_file_content:
+            self.append_preview_data = self._build_preview_data(
+                self.append_upload_file_content,
+                self.append_delimiter,
+            )
 
     def set_import_name(self, value: str):
         self.import_name = value
@@ -240,6 +324,9 @@ class InventoryState(rx.State):
     def set_import_push_ad(self, value: bool):
         self.import_push_ad = value
 
+    def set_append_push_ad(self, value: bool):
+        self.append_push_ad = value
+
     def open_import_modal_from_dashboard(self):
         self.open_import_modal_on_load = True
         return rx.redirect("/inventory")
@@ -253,11 +340,7 @@ class InventoryState(rx.State):
 
     def open_import_modal(self):
         self.show_import_modal = True
-        self.upload_file_content = ""
-        self.preview_data = []
-        self.import_result = {}
-        self.is_importing = False
-        self.import_progress = 0
+        self._reset_import_state()
         self.import_name = ""
         self.import_merchant = self._default_merchant_name()
         self.import_category = (
@@ -271,11 +354,7 @@ class InventoryState(rx.State):
 
     def close_import_modal(self):
         self.show_import_modal = False
-        self.upload_file_content = ""
-        self.preview_data = []
-        self.import_result = {}
-        self.is_importing = False
-        self.import_progress = 0
+        self._reset_import_state()
 
     async def handle_file_upload(self, files: List[rx.UploadFile]):
         if not files:
@@ -283,32 +362,48 @@ class InventoryState(rx.State):
 
         file = files[0]
         content = await file.read()
-        self.upload_file_content = content.decode("utf-8")
+        self.upload_file_content = self._decode_upload_content(content)
+        self.preview_data = self._build_preview_data(self.upload_file_content, self.delimiter)
 
-        lines = self.upload_file_content.strip().split("\n")[:5]
-        rows: List[Dict[str, Any]] = []
-        for index, line in enumerate(lines):
-            raw = line.strip()
-            parts = raw.split(self.delimiter) if raw else []
-            rows.append(
-                {
-                    "index": index + 1,
-                    "raw": raw[:80] + ("..." if len(raw) > 80 else ""),
-                    "fields": len(parts),
-                    "bin": "".join(ch for ch in (parts[0] if parts else "") if ch.isdigit())[:6],
-                }
-            )
-        self.preview_data = rows
+    def open_append_modal(self, item_id: int):
+        item = self._find_inventory_item(item_id)
+        if item is None:
+            return rx.toast.error("未找到库存", duration=1800)
+
+        self._reset_append_state()
+        self.show_append_modal = True
+        self.append_inventory_id = int(item.id)
+        self.append_name = item.name
+        self.append_merchant = item.merchant
+        self.append_category = item.category
+        self.append_unit_price = float(item.unit_price)
+        self.append_pick_price = float(item.pick_price)
+
+    def close_append_modal(self):
+        self.show_append_modal = False
+        self._reset_append_state()
+
+    async def handle_append_file_upload(self, files: List[rx.UploadFile]):
+        if not files:
+            return
+
+        file = files[0]
+        content = await file.read()
+        self.append_upload_file_content = self._decode_upload_content(content)
+        self.append_preview_data = self._build_preview_data(
+            self.append_upload_file_content,
+            self.append_delimiter,
+        )
 
     def start_import(self, operator_username: str = ""):
         if not self.upload_file_content:
-            return rx.toast.error("璇峰厛涓婁紶鏂囦欢", duration=3000)
+            return rx.toast.error("请先上传文件", duration=3000)
         if not self.import_name.strip():
-            return rx.toast.error("璇疯緭鍏ュ簱鍚嶇О", duration=3000)
+            return rx.toast.error("请输入库名称", duration=3000)
         if not self.import_merchant.strip():
-            return rx.toast.error("璇烽€夋嫨鍟嗗", duration=3000)
+            return rx.toast.error("请选择商家", duration=3000)
         if not self.import_category.strip():
-            return rx.toast.error("璇烽€夋嫨搴撳瓨鍒嗙被", duration=3000)
+            return rx.toast.error("请选择库存分类", duration=3000)
         if float(self.import_unit_price or 0) <= 0:
             return rx.toast.error("请填写单价", duration=3000)
         if float(self.import_pick_price or 0) <= 0:
@@ -337,7 +432,7 @@ class InventoryState(rx.State):
         except Exception as exc:
             self.is_importing = False
             self.import_progress = 0
-            return rx.toast.error(f"瀵煎叆澶辫触: {str(exc)}", duration=5000)
+            return rx.toast.error(f"导入失败: {str(exc)}", duration=5000)
 
         self.import_result = {
             "total": int(payload["result"]["total"]),
@@ -357,6 +452,51 @@ class InventoryState(rx.State):
             success_message = f"导入完成，成功 {success} 条"
         return rx.toast.success(success_message, duration=3000)
 
+    def submit_append_import(self, operator_username: str = ""):
+        if self.append_inventory_id is None:
+            return rx.toast.error("未选择库存", duration=1800)
+        if not self.append_upload_file_content:
+            return rx.toast.error("请先上传文件", duration=3000)
+
+        self.is_appending = True
+        self.append_progress = 10
+        operator_username_value = str(operator_username or "").strip() or "admin"
+        try:
+            payload = append_inventory_library_items(
+                inventory_id=int(self.append_inventory_id),
+                delimiter=self.append_delimiter,
+                content=self.append_upload_file_content,
+                push_ad=self.append_push_ad,
+                operator_username=operator_username_value,
+                source_filename="inventory_append.txt",
+            )
+        except ValueError as exc:
+            self.is_appending = False
+            self.append_progress = 0
+            return rx.toast.error(str(exc), duration=2600)
+        except Exception as exc:
+            self.is_appending = False
+            self.append_progress = 0
+            return rx.toast.error(f"追加失败: {str(exc)}", duration=5000)
+
+        self.append_result = {
+            "total": int(payload["result"]["total"]),
+            "success": int(payload["result"]["success"]),
+            "duplicate": int(payload["result"]["duplicate"]),
+            "invalid": int(payload["result"]["invalid"]),
+        }
+        self.append_progress = 100
+        self.is_appending = False
+        self.show_append_modal = False
+        self.load_inventory_data()
+
+        success = int(payload["result"]["success"])
+        if self.append_push_ad:
+            success_message = f"更新库完成，成功追加 {success} 条，并已加入待审核库池"
+        else:
+            success_message = f"更新库完成，成功追加 {success} 条"
+        return rx.toast.success(success_message, duration=3000)
+
     def open_delete_modal(self, item_id: int):
         self.selected_item_id = item_id
         self.show_delete_modal = True
@@ -367,7 +507,7 @@ class InventoryState(rx.State):
 
     def delete_item(self, operator_username: str = ""):
         if self.selected_item_id is None:
-            return rx.toast.error("鏈€夋嫨搴撳瓨", duration=1800)
+            return rx.toast.error("未选择库存", duration=1800)
         try:
             delete_inventory_library(
                 inventory_id=int(self.selected_item_id),
@@ -410,7 +550,7 @@ class InventoryState(rx.State):
 
     def update_price(self, operator_username: str = ""):
         if self.selected_item_id is None:
-            return rx.toast.error("鏈€夋嫨搴撳瓨", duration=1800)
+            return rx.toast.error("未选择库存", duration=1800)
         try:
             update_inventory_price(
                 inventory_id=int(self.selected_item_id),
@@ -461,6 +601,18 @@ class InventoryState(rx.State):
         )
 
     @rx.var
+    def has_append_preview(self) -> bool:
+        return len(self.append_preview_data) > 0
+
+    @rx.var
+    def has_append_result(self) -> bool:
+        return len(self.append_result) > 0
+
+    @rx.var
+    def can_submit_append_import(self) -> bool:
+        return bool(self.append_inventory_id and self.has_append_preview)
+
+    @rx.var
     def selected_item_name(self) -> str:
         if self.selected_item_id is None:
             return ""
@@ -468,4 +620,3 @@ class InventoryState(rx.State):
             if item.id == self.selected_item_id:
                 return item.name
         return ""
-

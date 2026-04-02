@@ -59,6 +59,31 @@ def import_inventory_library(
     return dict(data) if isinstance(data, dict) else {}
 
 
+def append_inventory_library_items(
+    *,
+    inventory_id: int,
+    delimiter: str,
+    content: str,
+    push_ad: bool,
+    operator_username: str,
+    source_filename: str,
+    session_factory: Optional[Any] = None,
+) -> dict[str, Any]:
+    del session_factory
+    data = request_json(
+        "POST",
+        f"/api/v1/inventory/libraries/{int(inventory_id)}/append",
+        {
+            "delimiter": delimiter,
+            "content": content,
+            "push_ad": bool(push_ad),
+            "operator_username": operator_username,
+            "source_filename": source_filename,
+        },
+    )
+    return dict(data) if isinstance(data, dict) else {}
+
+
 def update_inventory_price(
     *,
     inventory_id: int,

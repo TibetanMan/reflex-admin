@@ -10,6 +10,7 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import Message
 
 from bot.runtime_context import ensure_runtime_identity
+from services.bot_service import get_runtime_active_bot_by_token
 from services.bot_side_api import get_bot_balance
 
 from .menu import get_main_menu
@@ -44,6 +45,7 @@ async def _resolve_runtime_ids(message: Message) -> tuple[int, int]:
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     """Handle /start command."""
+    runtime_welcome_message = ""
     try:
         bot_id, user_id = await _resolve_runtime_ids(message)
         balance = await asyncio.to_thread(get_bot_balance, user_id=user_id, bot_id=bot_id)
@@ -51,11 +53,20 @@ async def cmd_start(message: Message):
     except Exception as exc:
         logger.exception("Failed to initialize runtime identity: %s", exc)
         current_balance = 0.0
+    try:
+        bot_payload = await asyncio.to_thread(
+            get_runtime_active_bot_by_token,
+            token=message.bot.token,
+        )
+        stored_welcome_message = str((bot_payload or {}).get("welcome_message") or "")
+        runtime_welcome_message = stored_welcome_message if stored_welcome_message.strip() else ""
+    except Exception as exc:
+        logger.exception("Failed to load runtime welcome message: %s", exc)
 
     user = message.from_user
     username = f"@{user.username}" if user and user.username else "未设置"
     first_name = user.first_name if user and user.first_name else "用户"
-    welcome_text = (
+    welcome_text = runtime_welcome_message or (
         f"欢迎你，{first_name}\n\n"
         f"用户ID: {user.id if user else '-'}\n"
         f"用户名: {username}\n"

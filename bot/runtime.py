@@ -17,7 +17,7 @@ from typing import Any, AsyncIterator, Awaitable, Callable
 
 from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.exceptions import TelegramForbiddenError
-from aiogram.types import TelegramObject
+from aiogram.types import BotCommand, TelegramObject
 
 from services.bot_service import list_runtime_bot_bindings
 from shared.config import settings
@@ -35,6 +35,17 @@ _RESTART_COOLDOWN = 10  # seconds to wait before restarting after polling failur
 # ---------------------------------------------------------------------------
 # Middleware helpers
 # ---------------------------------------------------------------------------
+
+
+async def _register_startup_commands(bot: Bot) -> None:
+    """Register slash commands shown in Telegram clients for this bot."""
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Start using the bot"),
+            BotCommand(command="help", description="Show available commands"),
+        ]
+    )
+
 
 def _is_blocked_user_forbidden(exc: TelegramForbiddenError) -> bool:
     detail = str(exc).strip().lower()
@@ -149,17 +160,23 @@ class _BotRunner:
         """Start polling for this bot in a background task."""
         if self.running:
             return
-        # Each bot gets its own Dispatcher with fresh router instances
-        self._dp = Dispatcher()
-        self._dp.update.outer_middleware(_IgnoreBlockedUserForbiddenMiddleware())
-        self._dp.include_router(create_start_router())
-        self._dp.include_router(create_menu_router())
-        self._bot = Bot(token=self.token)
-        self._task = asyncio.create_task(
-            self._poll_loop(),
-            name=f"bot-poll-{self.name}",
-        )
-        logger.info("Bot [%s] 轮询已启动。", self.name)
+        try:
+            # Each bot gets its own Dispatcher with fresh router instances
+            self._dp = Dispatcher()
+            self._dp.update.outer_middleware(_IgnoreBlockedUserForbiddenMiddleware())
+            self._dp.include_router(create_start_router())
+            self._dp.include_router(create_menu_router())
+            self._bot = Bot(token=self.token)
+            await _register_startup_commands(self._bot)
+            self._task = asyncio.create_task(
+                self._poll_loop(),
+                name=f"bot-poll-{self.name}",
+            )
+            logger.info("Bot [%s] 轮询已启动。", self.name)
+        except Exception:
+            with contextlib.suppress(Exception):
+                await self.stop()
+            raise
 
     async def stop(self) -> None:
         """Gracefully stop polling for this bot."""
@@ -253,7 +270,13 @@ async def _run_supervisor_loop(
             for token, name in desired.items():
                 if token not in runners:
                     runner = _BotRunner(token=token, name=name)
-                    await runner.start()
+                    try:
+                        await runner.start()
+                    except Exception:
+                        logger.exception("Bot [%s] 启动失败，%s 秒后重试。", runner.name, poll_interval_seconds)
+                        with contextlib.suppress(Exception):
+                            await runner.stop()
+                        continue
                     runners[token] = runner
 
             # 4. Check for crashed runners — clean up and let next iteration restart
