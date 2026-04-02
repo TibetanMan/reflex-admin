@@ -49,6 +49,15 @@ install_docker_if_missing() {
   echo "[OK] Docker installed."
 }
 
+load_existing_env_defaults() {
+  if [ -f .env ]; then
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+  fi
+}
+
 collect_config() {
   echo ""
   echo "--- Configuration ---"
@@ -71,9 +80,10 @@ collect_config() {
 
   read -rp "Enter TRONGRID_API_KEY (press Enter to skip): " TRONGRID_API_KEY
 
-  DB_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
-  REDIS_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
-  SECRET_KEY=$(openssl rand -base64 48 | tr -d '/+=' | head -c 64)
+  load_existing_env_defaults
+  DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)}"
+  REDIS_PASSWORD="${REDIS_PASSWORD:-$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)}"
+  SECRET_KEY="${SECRET_KEY:-$(openssl rand -base64 48 | tr -d '/+=' | head -c 64)}"
 
   echo "[OK] Configuration collected."
 }
