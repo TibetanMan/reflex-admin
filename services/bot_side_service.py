@@ -13,6 +13,7 @@ from sqlmodel import Session, select
 from services.agent_campaign_service import get_active_campaign_for_bot
 from services.deposit_chain_service import sync_deposit_from_chain
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
+from services.merchant_aggregate_service import apply_completed_sale
 from shared.database import get_db_session
 from shared.models.balance_ledger import BalanceAction, BalanceLedger
 from shared.models.bin_info import BinInfo
@@ -287,6 +288,11 @@ def _mode_filter_payload(
         "card_kind": str(card_kind or ""),
     }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _price_for_library_mode(*, library: InventoryLibrary, mode: str) -> Decimal:
+    mode_text = str(mode or "").strip().lower()
+    return _money(library.unit_price if mode_text == "random" else library.pick_price)
 
 
 def list_bot_catalog_categories(
@@ -741,7 +747,7 @@ def quote_library_purchase(
             else:
                 selected_rows = matched[:qty]
 
-        unit_price = _money(library.pick_price or 0)
+        unit_price = _price_for_library_mode(library=library, mode=mode_text)
         total_units = len(selected_rows)
         total_amount = _money(unit_price * Decimal(str(total_units)))
         return {
@@ -824,7 +830,7 @@ def execute_library_purchase(
                 raise ValueError("库存不足")
             selected_rows = matched[:qty]
 
-        unit_price = _money(library.pick_price or 0)
+        unit_price = _price_for_library_mode(library=library, mode=mode_text)
         total_units = len(selected_rows)
         if total_units <= 0:
             raise ValueError("库存不足")
@@ -879,6 +885,19 @@ def execute_library_purchase(
             product.sold_price = unit_price
             product.updated_at = _now()
             session.add(product)
+
+        profits = apply_completed_sale(
+            session,
+            products=selected_rows,
+            sale_amount_by_product_id={
+                int(product.id or 0): unit_price
+                for product in selected_rows
+            },
+        )
+        order.platform_profit = profits["platform_profit"]
+        order.supplier_profit = profits["supplier_profit"]
+        order.updated_at = _now()
+        session.add(order)
 
         after_balance = _money(before_balance - total_amount)
         account.balance = after_balance
@@ -1003,18 +1022,35 @@ def list_bot_merchant_items(
         if merchant is None:
             raise ValueError("Merchant not found.")
 
-        rows = _list_available_products(session, merchant_id=int(merchant_id))
+        rows = list(
+            session.exec(
+                select(InventoryLibrary)
+                .where(InventoryLibrary.merchant_id == int(merchant_id))
+                .order_by(InventoryLibrary.id.asc())
+            ).all()
+        )
+        available_counts: dict[int, int] = {}
+        for item in _list_available_products(session, merchant_id=int(merchant_id)):
+            library_id = int(item.inventory_library_id or 0)
+            if library_id <= 0:
+                continue
+            available_counts[library_id] = available_counts.get(library_id, 0) + 1
+
         category_ids = {int(item.category_id) for item in rows}
         categories = list(session.exec(select(Category)).all())
         category_map = {int(item.id or 0): item for item in categories if int(item.id or 0) in category_ids}
 
         payload_rows = [
-            _catalog_item_row(
-                item,
-                category_name=str(category_map.get(int(item.category_id)).name if int(item.category_id) in category_map else "-"),
-                merchant_name=str(merchant.name),
-            )
+            {
+                "id": int(item.id or 0),
+                "name": str(item.name or "-"),
+                "category_name": str(category_map.get(int(item.category_id)).name if int(item.category_id) in category_map else "-"),
+                "remaining_count": int(available_counts.get(int(item.id or 0), 0)),
+            }
             for item in rows
+            if _status_text(item.status) == InventoryLibraryStatus.ACTIVE.value
+            and bool(getattr(item, "is_bot_enabled", True))
+            and int(available_counts.get(int(item.id or 0), 0)) > 0
         ]
         result = _paginate(payload_rows, page=page, page_size=page_size)
         result["merchant_id"] = int(merchant.id or 0)
@@ -1250,6 +1286,19 @@ def checkout_bot_order(
             product.sold_price = round(float(product.selling_price or 0), 2)
             product.updated_at = _now()
             session.add(product)
+
+        profits = apply_completed_sale(
+            session,
+            products=chosen_products,
+            sale_amount_by_product_id={
+                int(product.id or 0): _money(product.selling_price or 0)
+                for product in chosen_products
+            },
+        )
+        order.platform_profit = profits["platform_profit"]
+        order.supplier_profit = profits["supplier_profit"]
+        order.updated_at = _now()
+        session.add(order)
 
         after_balance = _money(before_balance - total_amount)
         account.balance = after_balance

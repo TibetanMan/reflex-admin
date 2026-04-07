@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.merchant_aggregate_service import reverse_completed_sale
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
 from shared.models.admin_user import AdminUser
@@ -15,7 +16,7 @@ from shared.models.balance_ledger import BalanceAction, BalanceLedger
 from shared.models.bot_instance import BotInstance
 from shared.models.merchant import Merchant
 from shared.models.order import Order, OrderItem, OrderStatus
-from shared.models.product import ProductItem
+from shared.models.product import ProductItem, ProductStatus
 from shared.models.user import User
 
 
@@ -212,6 +213,9 @@ def refund_order(
         order = session.exec(select(Order).where(Order.id == int(order_id))).first()
         if order is None:
             raise ValueError("Order not found.")
+        order_items = list(
+            session.exec(select(OrderItem).where(OrderItem.order_id == int(order.id or 0))).all()
+        )
 
         current_status = _to_status_text(order.status)
         if current_status == OrderStatus.REFUNDED.value:
@@ -246,6 +250,27 @@ def refund_order(
         if order.completed_at is None:
             order.completed_at = now
         session.add(order)
+
+        product_ids = {int(item.product_id) for item in order_items}
+        products = list(
+            session.exec(select(ProductItem).where(ProductItem.id.in_(list(product_ids))))  # type: ignore[arg-type]
+        ) if product_ids else []
+        product_map = {int(item.id or 0): item for item in products}
+        refund_amounts: dict[int, Decimal] = {}
+        for item in order_items:
+            product = product_map.get(int(item.product_id))
+            if product is None:
+                continue
+            product.status = ProductStatus.REFUNDED
+            product.updated_at = now
+            session.add(product)
+            refund_amounts[int(product.id or 0)] = _normalize_amount(item.subtotal or 0)
+
+        reverse_completed_sale(
+            session,
+            products=[item for item in products if int(item.id or 0) in refund_amounts],
+            sale_amount_by_product_id=refund_amounts,
+        )
 
         session.add(
             BalanceLedger(

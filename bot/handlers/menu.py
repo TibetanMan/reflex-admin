@@ -234,12 +234,13 @@ def _library_menu_title(*, category_name: str, rows: list[dict[str, Any]], displ
 
 def _library_action_keyboard(snapshot: dict[str, Any]) -> InlineKeyboardMarkup:
     library_id = int(snapshot.get("library_id") or 0)
-    price = _money_text(snapshot.get("pick_price") or 0)
+    pick_price = _money_text(snapshot.get("pick_price") or 0)
+    random_price = _money_text(snapshot.get("unit_price") or snapshot.get("pick_price") or 0)
     prefix_counts = dict(snapshot.get("prefix_counts") or {})
     rows: list[list[InlineKeyboardButton]] = [
         [
-            InlineKeyboardButton(text=f"🎯 挑头购买 {price}U", callback_data=f"ACT:{library_id}:HEAD"),
-            InlineKeyboardButton(text=f"🎲 随机购买 {price}U", callback_data=f"ACT:{library_id}:RND"),
+            InlineKeyboardButton(text=f"🎯 挑头购买 {pick_price}U", callback_data=f"ACT:{library_id}:HEAD"),
+            InlineKeyboardButton(text=f"🎲 随机购买 {random_price}U", callback_data=f"ACT:{library_id}:RND"),
         ],
         [InlineKeyboardButton(text="📄 实时卡头库存", callback_data=f"ACT:{library_id}:BINS")],
     ]
@@ -248,8 +249,8 @@ def _library_action_keyboard(snapshot: dict[str, Any]) -> InlineKeyboardMarkup:
         d_count = int(prefix_counts.get(f"{digit}D") or 0)
         rows.append(
             [
-                InlineKeyboardButton(text=f"{digit}头C卡 {price}U 剩余{c_count}", callback_data=f"PF:{library_id}:{digit}:C"),
-                InlineKeyboardButton(text=f"{digit}头D卡 {price}U 剩余{d_count}", callback_data=f"PF:{library_id}:{digit}:D"),
+                InlineKeyboardButton(text=f"{digit}头C卡 {pick_price}U 剩余{c_count}", callback_data=f"PF:{library_id}:{digit}:C"),
+                InlineKeyboardButton(text=f"{digit}头D卡 {pick_price}U 剩余{d_count}", callback_data=f"PF:{library_id}:{digit}:D"),
             ]
         )
     return InlineKeyboardMarkup(inline_keyboard=rows)
@@ -447,6 +448,7 @@ async def handle_library_action(callback: CallbackQuery, state: FSMContext):
         snapshot = await asyncio.to_thread(get_bot_library_snapshot, library_id=library_id)
         library_name = str(snapshot.get("library_name") or "-")
         pick_price = _money_text(snapshot.get("pick_price") or 0)
+        random_price = _money_text(snapshot.get("unit_price") or snapshot.get("pick_price") or 0)
         if action == "HEAD":
             await state.set_state(MenuStates.waiting_head_bins)
             await state.update_data(
@@ -467,12 +469,12 @@ async def handle_library_action(callback: CallbackQuery, state: FSMContext):
                 purchase_mode="random",
                 library_id=library_id,
                 library_name=library_name,
-                pick_price=pick_price,
+                pick_price=random_price,
             )
             await callback.message.answer(
                 f"你已选择【{library_name}】\n"
                 f"种类【随机购买】\n"
-                f"价格：【{pick_price}】\n\n"
+                f"价格：【{random_price}】\n\n"
                 "请输入购买数量："
             )
             await callback.answer()
@@ -771,22 +773,26 @@ async def handle_merchant_items(callback: CallbackQuery):
         page_value = int(payload.get("page") or 1)
         total_pages = max(int(payload.get("total_pages") or 1), 1)
         merchant_name = str(payload.get("merchant_name") or "-")
-        lines = [f"{merchant_name} - 第 {page_value}/{total_pages} 页", ""]
+        lines = [f"{merchant_name} - 第 {page_value}/{total_pages} 页", "", "请选择库存库："]
         if not rows:
             lines.append("该商家暂无可售商品。")
-        else:
-            for index, row in enumerate(rows, start=1):
-                lines.append(
-                    f"{index}. {row.get('category_name', '-')}"
-                    f" | BIN {row.get('bin_number', '-')}"
-                    f" | {_money_text(row.get('price') or 0)} USDT"
+        buttons: list[list[InlineKeyboardButton]] = [
+            [
+                InlineKeyboardButton(
+                    text=f"{row.get('name', '-')}【{int(row.get('remaining_count') or 0)}】",
+                    callback_data=f"LIB:{int(row.get('id') or 0)}",
                 )
+            ]
+            for row in rows
+        ]
         nav: list[InlineKeyboardButton] = []
         if page_value > 1:
             nav.append(InlineKeyboardButton(text="⬅️ 上一页", callback_data=f"MER:{merchant_id}:{page_value - 1}"))
         if page_value < total_pages:
             nav.append(InlineKeyboardButton(text="下一页 ➡️", callback_data=f"MER:{merchant_id}:{page_value + 1}"))
-        markup = InlineKeyboardMarkup(inline_keyboard=[nav]) if nav else None
+        if nav:
+            buttons.append(nav)
+        markup = InlineKeyboardMarkup(inline_keyboard=buttons) if buttons else None
         await callback.message.edit_text("\n".join(lines), reply_markup=markup)
         await callback.answer()
     except Exception as exc:

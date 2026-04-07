@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable, Optional
 
@@ -10,15 +10,13 @@ from sqlmodel import Session, select
 
 from services.agent_campaign_reward_service import apply_agent_campaign_reward_for_deposit
 from services.deposit_chain_service import sync_pending_usdt_deposits
-from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
-from services.user_service import ensure_bot_account, sync_user_aggregate_from_accounts
+from services.manual_credit_service import create_manual_credit
 from services.wallet_config_sync import sync_wallets_from_config
 from shared.database import get_db_session
-from shared.models.admin_audit_log import AdminAuditLog
 from shared.models.admin_user import AdminUser
-from shared.models.balance_ledger import BalanceAction, BalanceLedger
+from shared.models.balance_ledger import BalanceAction
 from shared.models.bot_instance import BotInstance
-from shared.models.deposit import Deposit, DepositMethod, DepositStatus
+from shared.models.deposit import Deposit, DepositMethod
 from shared.models.user import User
 from shared.models.wallet import WalletAddress
 
@@ -160,16 +158,6 @@ def _find_user_by_identifier(session: Session, identifier: str) -> Optional[User
     return session.exec(select(User).where(User.username == normalized)).first()
 
 
-def _next_deposit_no(session: Session) -> str:
-    prefix = datetime.now().strftime("DEP%Y%m%d%H%M%S")
-    candidate = prefix
-    suffix = 1
-    while session.exec(select(Deposit).where(Deposit.deposit_no == candidate)).first() is not None:
-        suffix += 1
-        candidate = f"{prefix}{suffix:02d}"
-    return candidate
-
-
 def create_manual_deposit(
     *,
     user_identifier: str,
@@ -196,83 +184,31 @@ def create_manual_deposit(
             bot = session.exec(select(BotInstance).order_by(BotInstance.id.asc())).first()
         if bot is None:
             raise ValueError("No bot instance available.")
-        wallet = resolve_wallet_by_bot_or_raise(session, bot_id=int(bot.id or 0))
-
         operator = session.exec(
             select(AdminUser).where(AdminUser.username == str(operator_username or "").strip())
         ).first()
-
-        account = ensure_bot_account(session, user=user, bot=bot)
-        before_balance = Decimal(str(account.balance or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        after_balance = (before_balance + amount_value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
-        account.balance = after_balance
-        account.total_deposit = (Decimal(str(account.total_deposit or 0)) + amount_value).quantize(
-            Decimal("0.01"),
-            rounding=ROUND_HALF_UP,
-        )
-        account.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        account.last_active_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        session.add(account)
-        sync_user_aggregate_from_accounts(session, user=user)
-
-        deposit = Deposit(
-            deposit_no=_next_deposit_no(session),
-            user_id=int(user.id or 0),
-            bot_id=int(bot.id or 0),
+        created = create_manual_credit(
+            session,
+            user=user,
+            bot=bot,
             amount=amount_value,
-            actual_amount=amount_value,
-            method=DepositMethod.MANUAL,
-            to_address=str(wallet.address),
-            status=DepositStatus.COMPLETED,
-            operator_id=int(operator.id or 0) if operator else None,
-            operator_remark=str(remark or "手动充值"),
-            completed_at=datetime.now(timezone.utc).replace(tzinfo=None),
-        )
-        session.add(deposit)
-        wallet.balance = (Decimal(str(wallet.balance or 0)) + amount_value).quantize(
-            Decimal("0.01"),
-            rounding=ROUND_HALF_UP,
-        )
-        wallet.total_received = (Decimal(str(wallet.total_received or 0)) + amount_value).quantize(
-            Decimal("0.01"),
-            rounding=ROUND_HALF_UP,
-        )
-        wallet.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        session.add(wallet)
-
-        session.add(
-            BalanceLedger(
-                user_id=int(user.id or 0),
-                bot_id=int(bot.id or 0),
-                action=BalanceAction.MANUAL,
-                amount=amount_value,
-                before_balance=before_balance,
-                after_balance=after_balance,
-                operator_id=int(operator.id or 0) if operator else None,
-                remark=str(remark or "手动充值"),
-                request_id=f"manual-{datetime.now():%Y%m%d%H%M%S%f}",
-            )
-        )
-
-        session.add(
-            AdminAuditLog(
-                operator_id=int(operator.id or 0) if operator else None,
-                action="finance.manual_deposit",
-                target_type="user",
-                target_id=int(user.id or 0),
-                request_id=f"manual-deposit-{datetime.now():%Y%m%d%H%M%S%f}",
-                detail_json=(
-                    '{"user_identifier":"%s","amount":"%s","remark":"%s"}'
-                    % (
-                        str(user_identifier),
-                        str(amount_value),
-                        str(remark or ""),
-                    )
-                ),
-            )
+            remark=str(remark or "手动充值"),
+            operator=operator,
+            ledger_action=BalanceAction.MANUAL,
+            request_id=f"manual-{datetime.now():%Y%m%d%H%M%S%f}",
+            audit_action="finance.manual_deposit",
+            audit_detail_json=(
+                '{"user_identifier":"%s","amount":"%s","remark":"%s"}'
+                % (
+                    str(user_identifier),
+                    str(amount_value),
+                    str(remark or ""),
+                )
+            ),
         )
 
         session.commit()
+        deposit = created["deposit"]
         session.refresh(deposit)
         apply_agent_campaign_reward_for_deposit(
             deposit_id=int(deposit.id or 0),

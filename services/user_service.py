@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.manual_credit_service import create_manual_credit
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
 from shared.models.admin_user import AdminUser
@@ -608,51 +609,23 @@ def adjust_user_balance(
         )
         if bot is None:
             raise ValueError("Bot not found.")
-        account = _ensure_bot_account(session, user=user, bot=bot)
 
         operator = session.exec(
             select(AdminUser).where(AdminUser.username == str(operator_username or "").strip())
         ).first()
 
-        before_balance = _normalize_amount(account.balance or 0)
-        if ledger_action == BalanceAction.DEBIT and amount_value > before_balance:
-            raise ValueError("Amount exceeds current balance.")
-
         if ledger_action == BalanceAction.CREDIT:
-            after_balance = _normalize_amount(before_balance + amount_value)
-            account.total_deposit = _normalize_amount(account.total_deposit or 0) + amount_value
-        else:
-            after_balance = _normalize_amount(before_balance - amount_value)
-
-        account.balance = after_balance
-        account.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        account.last_active_at = datetime.now(timezone.utc).replace(tzinfo=None)
-        session.add(account)
-
-        _sync_user_aggregate_from_accounts(session, user=user)
-
-        session.add(
-            BalanceLedger(
-                user_id=int(user.id or 0),
-                bot_id=int(bot.id or 0),
-                action=ledger_action,
+            created = create_manual_credit(
+                session,
+                user=user,
+                bot=bot,
                 amount=amount_value,
-                before_balance=before_balance,
-                after_balance=after_balance,
-                operator_id=int(operator.id or 0) if operator else None,
                 remark=str(remark or ""),
+                operator=operator,
+                ledger_action=ledger_action,
                 request_id=request_text,
-            )
-        )
-
-        session.add(
-            AdminAuditLog(
-                operator_id=int(operator.id or 0) if operator else None,
-                action="users.balance_adjust",
-                target_type="user",
-                target_id=int(user.id or 0),
-                request_id=request_text,
-                detail_json=(
+                audit_action="users.balance_adjust",
+                audit_detail_json=(
                     '{"user_id":%d,"action":"%s","amount":"%s","source_bot":"%s"}'
                     % (
                         int(user.id or 0),
@@ -662,7 +635,53 @@ def adjust_user_balance(
                     )
                 ),
             )
-        )
+            account = created["account"]
+            after_balance = created["after_balance"]
+        else:
+            account = _ensure_bot_account(session, user=user, bot=bot)
+            before_balance = _normalize_amount(account.balance or 0)
+            if amount_value > before_balance:
+                raise ValueError("Amount exceeds current balance.")
+            after_balance = _normalize_amount(before_balance - amount_value)
+            account.balance = after_balance
+            account.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            account.last_active_at = datetime.now(timezone.utc).replace(tzinfo=None)
+            session.add(account)
+
+            _sync_user_aggregate_from_accounts(session, user=user)
+
+            session.add(
+                BalanceLedger(
+                    user_id=int(user.id or 0),
+                    bot_id=int(bot.id or 0),
+                    action=ledger_action,
+                    amount=amount_value,
+                    before_balance=before_balance,
+                    after_balance=after_balance,
+                    operator_id=int(operator.id or 0) if operator else None,
+                    remark=str(remark or ""),
+                    request_id=request_text,
+                )
+            )
+
+            session.add(
+                AdminAuditLog(
+                    operator_id=int(operator.id or 0) if operator else None,
+                    action="users.balance_adjust",
+                    target_type="user",
+                    target_id=int(user.id or 0),
+                    request_id=request_text,
+                    detail_json=(
+                        '{"user_id":%d,"action":"%s","amount":"%s","source_bot":"%s"}'
+                        % (
+                            int(user.id or 0),
+                            ledger_action.value,
+                            str(amount_value),
+                            str(source_bot_name or "").replace('"', "'"),
+                        )
+                    ),
+                )
+            )
 
         session.commit()
         session.refresh(user)

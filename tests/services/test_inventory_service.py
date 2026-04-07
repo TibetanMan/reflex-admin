@@ -149,6 +149,51 @@ def test_append_inventory_library_items_refreshes_counts(tmp_path: Path):
     assert int(appended["library"]["remaining"]) == 2
     assert int(appended["library"]["sold"]) == 0
 
+    session = session_factory()
+    try:
+        merchant = session.exec(select(Merchant).where(Merchant.name == "平台自营")).first()
+    finally:
+        session.close()
+
+    assert merchant is not None
+    assert merchant.total_products == 2
+
+
+def test_import_inventory_library_updates_merchant_total_products(tmp_path: Path):
+    from services.inventory_service import import_inventory_library
+
+    session_factory = _session_factory(tmp_path)
+    _seed_inventory_rows(session_factory)
+    category_name = INVENTORY_FIXED_CATEGORY_NAMES[0]
+
+    import_inventory_library(
+        name="Merchant Aggregate Library",
+        merchant_name="平台自营",
+        category_name=category_name,
+        unit_price=12.0,
+        pick_price=6.0,
+        delimiter="|",
+        content="\n".join(
+            [
+                "4111111111111111|12|2030|123|US",
+                "5555555555554444|12|2030|123|US",
+            ]
+        ),
+        push_ad=False,
+        operator_username="admin",
+        source_filename="merchant-aggregate.txt",
+        session_factory=session_factory,
+    )
+
+    session = session_factory()
+    try:
+        merchant = session.exec(select(Merchant).where(Merchant.name == "平台自营")).first()
+    finally:
+        session.close()
+
+    assert merchant is not None
+    assert merchant.total_products == 2
+
 
 def test_append_inventory_library_items_preserves_duplicate_rules(tmp_path: Path):
     from services.inventory_service import (

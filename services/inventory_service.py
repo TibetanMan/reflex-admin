@@ -10,6 +10,7 @@ from typing import Any, Callable, Optional
 from sqlalchemy import delete
 from sqlmodel import Session, select
 
+from services.merchant_aggregate_service import add_inventory_products
 from services.push_queue import register_inventory_review_task
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
@@ -465,6 +466,11 @@ def import_inventory_library(
         )
 
         _refresh_library_counts(session, library)
+        add_inventory_products(
+            session,
+            merchant_id=int(merchant.id or 0),
+            count=success,
+        )
 
         task.total = total
         task.success = success
@@ -606,6 +612,11 @@ def append_inventory_library_items(
         )
 
         _refresh_library_counts(session, library)
+        add_inventory_products(
+            session,
+            merchant_id=int(merchant.id or 0),
+            count=success,
+        )
 
         task.total = total
         task.success = success
