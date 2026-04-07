@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.business_stats_service import sync_bot_and_related_agent_fields
 from services.manual_credit_service import create_manual_credit
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
@@ -116,6 +117,7 @@ def _ensure_bot_account(session: Session, *, user: User, bot: BotInstance) -> Bo
     )
     session.add(account)
     session.flush()
+    sync_bot_and_related_agent_fields(session, bot_id=int(bot.id or 0))
     return account
 
 

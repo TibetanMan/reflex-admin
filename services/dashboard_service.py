@@ -7,6 +7,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.business_stats_service import get_bot_business_truth
 from shared.database import get_db_session
 from shared.models.bot_instance import BotInstance
 from shared.models.category import Category
@@ -169,15 +170,17 @@ def get_dashboard_snapshot(
             for item in recent_deposits
         ]
 
-        bot_rows = [
-            {
-                "name": str(item.name),
-                "users": int(item.total_users or 0),
-                "orders": int(item.total_orders or 0),
-                "status": _status_text(item.status),
-            }
-            for item in bots[:5]
-        ]
+        bot_rows = []
+        for item in bots[:5]:
+            truth = get_bot_business_truth(session, bot_id=int(item.id or 0))
+            bot_rows.append(
+                {
+                    "name": str(item.name),
+                    "users": int(truth["total_users"]),
+                    "orders": int(truth["total_orders"]),
+                    "status": _status_text(item.status),
+                }
+            )
 
         return {
             "today_sales": round(today_sales, 2),

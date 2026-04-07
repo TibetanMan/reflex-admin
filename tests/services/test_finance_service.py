@@ -123,6 +123,8 @@ def test_create_manual_deposit_applies_agent_campaign_bonus(tmp_path):
         account = session.exec(
             select(BotUserAccount).where(BotUserAccount.user_id == int(user.id or 0))
         ).first()
+        bot = session.exec(select(BotInstance).where(BotInstance.name == "Finance Bot")).first()
+        agent = session.exec(select(Agent).where(Agent.name == "Agent One")).first()
         grants = list(session.exec(select(CampaignRewardGrant)).all())
         bonus_ledger = session.exec(
             select(BalanceLedger).where(BalanceLedger.action == BalanceAction.CAMPAIGN_BONUS)
@@ -141,6 +143,10 @@ def test_create_manual_deposit_applies_agent_campaign_bonus(tmp_path):
     assert float(user.total_deposit) == float(account.total_deposit)
     assert float(snapshot["balance"]) == 40.50
     assert float(snapshot["total_deposit"]) == 25.50
+    assert bot is not None
+    assert bot.total_users == 1
+    assert agent is not None
+    assert agent.total_users == 1
     assert len(grants) == 1
     assert bonus_ledger is not None
 

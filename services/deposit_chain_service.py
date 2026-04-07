@@ -11,6 +11,7 @@ import requests
 from sqlmodel import Session, select
 
 from services.agent_campaign_reward_service import apply_agent_campaign_reward_for_deposit
+from services.business_stats_service import sync_bot_and_related_agent_fields
 from shared.database import get_db_session
 from shared.models.balance_ledger import BalanceAction, BalanceLedger
 from shared.models.bot_user_account import BotUserAccount
@@ -299,6 +300,7 @@ def _ensure_bot_account(
     )
     session.add(account)
     session.flush()
+    sync_bot_and_related_agent_fields(session, bot_id=int(bot_id))
     return account
 
 

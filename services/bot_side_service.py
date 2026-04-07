@@ -11,6 +11,7 @@ from typing import Any, Callable, Optional
 from sqlmodel import Session, select
 
 from services.agent_campaign_service import get_active_campaign_for_bot
+from services.business_stats_service import sync_bot_and_related_agent_fields
 from services.deposit_chain_service import sync_deposit_from_chain
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
 from services.merchant_aggregate_service import apply_completed_sale
@@ -23,6 +24,7 @@ from shared.models.cart import CartItem
 from shared.models.category import Category
 from shared.models.deposit import Deposit, DepositMethod, DepositStatus
 from shared.models.inventory import InventoryLibrary, InventoryLibraryStatus
+from shared.models.agent import Agent
 from shared.models.merchant import Merchant
 from shared.models.order import Order, OrderItem, OrderStatus
 from shared.models.product import ProductItem, ProductStatus
@@ -124,6 +126,7 @@ def _ensure_bot_user_account(
         )
         session.add(account)
         session.flush()
+        sync_bot_and_related_agent_fields(session, bot_id=int(bot.id or 0))
     else:
         account.updated_at = _now()
         account.last_active_at = _now()
@@ -293,6 +296,15 @@ def _mode_filter_payload(
 def _price_for_library_mode(*, library: InventoryLibrary, mode: str) -> Decimal:
     mode_text = str(mode or "").strip().lower()
     return _money(library.unit_price if mode_text == "random" else library.pick_price)
+
+
+def _agent_profit_for_order(session: Session, *, bot: BotInstance, amount: Decimal) -> Decimal:
+    if bool(bot.is_platform_bot) or not bot.owner_agent_id:
+        return Decimal("0.00")
+    agent = session.exec(select(Agent).where(Agent.id == int(bot.owner_agent_id))).first()
+    if agent is None:
+        return Decimal("0.00")
+    return _money(amount * Decimal(str(agent.profit_rate or 0)))
 
 
 def list_bot_catalog_categories(
@@ -853,6 +865,7 @@ def execute_library_purchase(
             updated_at=_now(),
             remark=f"library:{int(library.id or 0)}:{str(library.name or '')}",
         )
+        order.agent_profit = _agent_profit_for_order(session, bot=bot, amount=total_amount)
         session.add(order)
         session.flush()
 
@@ -925,6 +938,8 @@ def execute_library_purchase(
         )
 
         _refresh_library_counts(session, library=library)
+        session.flush()
+        sync_bot_and_related_agent_fields(session, bot_id=int(bot.id or 0))
         session.commit()
         session.refresh(order)
         return {
@@ -1252,6 +1267,7 @@ def checkout_bot_order(
             created_at=_now(),
             updated_at=_now(),
         )
+        order.agent_profit = _agent_profit_for_order(session, bot=bot, amount=total_amount)
         session.add(order)
         session.flush()
 
@@ -1328,6 +1344,8 @@ def checkout_bot_order(
         for cart_item in cart_rows:
             session.delete(cart_item)
 
+        session.flush()
+        sync_bot_and_related_agent_fields(session, bot_id=int(bot.id or 0))
         session.commit()
         session.refresh(order)
         return {

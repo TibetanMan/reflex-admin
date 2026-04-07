@@ -7,6 +7,7 @@ from sqlmodel import SQLModel, Session, create_engine, select
 
 from services.inventory_service import import_inventory_library
 from shared.models.admin_user import AdminRole, AdminUser
+from shared.models.agent import Agent
 from shared.models.bot_instance import BotInstance, BotStatus
 from shared.models.inventory import InventoryLibrary
 from shared.models.merchant import Merchant
@@ -52,6 +53,33 @@ def _seed_library_purchase_case(tmp_path: Path):
             is_verified=True,
         )
         session.add(merchant)
+        session.commit()
+        session.refresh(merchant)
+
+        agent_admin = AdminUser(
+            username="agent_owner",
+            email="agent-owner@local.test",
+            password_hash="",
+            role=AdminRole.AGENT,
+            display_name="Agent Owner",
+            is_active=True,
+            is_verified=True,
+        )
+        agent_admin.set_password("agent123")
+        session.add(agent_admin)
+        session.commit()
+        session.refresh(agent_admin)
+
+        agent = Agent(
+            admin_user_id=int(agent_admin.id or 0),
+            name="Agent Owner",
+            profit_rate=0.10,
+            is_active=True,
+            is_verified=True,
+        )
+        session.add(agent)
+        session.commit()
+        session.refresh(agent)
 
         bot = BotInstance(
             token="bot-side-token-001",
@@ -59,14 +87,17 @@ def _seed_library_purchase_case(tmp_path: Path):
             username="bot_side",
             status=BotStatus.ACTIVE,
             is_enabled=True,
-            is_platform_bot=True,
+            is_platform_bot=False,
+            owner_agent_id=int(agent.id or 0),
         )
         session.add(bot)
         session.commit()
         session.refresh(merchant)
+        session.refresh(agent)
         session.refresh(bot)
         merchant_id = int(merchant.id or 0)
         bot_id = int(bot.id or 0)
+        agent_id = int(agent.id or 0)
 
         user = User(
             telegram_id=9001001001,
@@ -111,6 +142,7 @@ def _seed_library_purchase_case(tmp_path: Path):
         "user_id": user_id,
         "bot_id": bot_id,
         "merchant_id": merchant_id,
+        "agent_id": agent_id,
     }
 
 
@@ -135,6 +167,32 @@ def test_list_bot_merchant_items_returns_library_rows(tmp_path: Path):
             "remaining_count": 3,
         }
     ]
+
+
+def test_add_bot_cart_item_refreshes_bot_and_agent_user_truth(tmp_path: Path):
+    from services.bot_side_service import add_bot_cart_item
+
+    seeded = _seed_library_purchase_case(tmp_path)
+
+    add_bot_cart_item(
+        user_id=seeded["user_id"],
+        bot_id=seeded["bot_id"],
+        category_id=1,
+        quantity=1,
+        session_factory=seeded["session_factory"],
+    )
+
+    session = seeded["session_factory"]()
+    try:
+        bot = session.exec(select(BotInstance).where(BotInstance.id == seeded["bot_id"])).first()
+        agent = session.exec(select(Agent).where(Agent.id == seeded["agent_id"])).first()
+    finally:
+        session.close()
+
+    assert bot is not None
+    assert bot.total_users == 1
+    assert agent is not None
+    assert agent.total_users == 1
 
 
 def test_quote_library_purchase_uses_mode_specific_prices(tmp_path: Path):
@@ -181,6 +239,8 @@ def test_execute_library_purchase_uses_unit_price_for_random_mode(tmp_path: Path
         order = session.exec(select(Order).where(Order.id == int(payload["order_id"]))).first()
         order_item = session.exec(select(OrderItem).where(OrderItem.order_id == int(payload["order_id"]))).first()
         sold_row = session.exec(select(ProductItem).where(ProductItem.id == int(order_item.product_id))).first()
+        bot = session.exec(select(BotInstance).where(BotInstance.id == seeded["bot_id"])).first()
+        agent = session.exec(select(Agent).where(Agent.id == seeded["agent_id"])).first()
     finally:
         session.close()
 
@@ -192,6 +252,13 @@ def test_execute_library_purchase_uses_unit_price_for_random_mode(tmp_path: Path
     assert float(order_item.unit_price) == 20.0
     assert sold_row is not None
     assert float(sold_row.sold_price) == 20.0
+    assert bot is not None
+    assert bot.total_orders == 1
+    assert float(bot.total_revenue) == 20.0
+    assert agent is not None
+    assert agent.total_orders == 1
+    assert float(agent.total_profit) == 2.0
+    assert float(agent.frozen_balance) == 2.0
 
 
 def test_purchase_and_refund_keep_merchant_aggregates_in_sync(tmp_path: Path):
@@ -213,6 +280,8 @@ def test_purchase_and_refund_keep_merchant_aggregates_in_sync(tmp_path: Path):
     try:
         merchant = session.exec(select(Merchant).where(Merchant.id == seeded["merchant_id"])).first()
         order = session.exec(select(Order).where(Order.id == int(payload["order_id"]))).first()
+        bot = session.exec(select(BotInstance).where(BotInstance.id == seeded["bot_id"])).first()
+        agent = session.exec(select(Agent).where(Agent.id == seeded["agent_id"])).first()
     finally:
         session.close()
 
@@ -224,6 +293,14 @@ def test_purchase_and_refund_keep_merchant_aggregates_in_sync(tmp_path: Path):
     assert order is not None
     assert float(order.platform_profit) == 2.0
     assert float(order.supplier_profit) == 18.0
+    assert float(order.agent_profit) == 2.0
+    assert bot is not None
+    assert bot.total_orders == 1
+    assert float(bot.total_revenue) == 20.0
+    assert agent is not None
+    assert agent.total_orders == 1
+    assert float(agent.total_profit) == 2.0
+    assert float(agent.frozen_balance) == 2.0
 
     refund_order(
         order_id=int(payload["order_id"]),
@@ -240,6 +317,8 @@ def test_purchase_and_refund_keep_merchant_aggregates_in_sync(tmp_path: Path):
         library = session.exec(
             select(InventoryLibrary).where(InventoryLibrary.id == seeded["library_id"])
         ).first()
+        bot_after_refund = session.exec(select(BotInstance).where(BotInstance.id == seeded["bot_id"])).first()
+        agent_after_refund = session.exec(select(Agent).where(Agent.id == seeded["agent_id"])).first()
     finally:
         session.close()
 
@@ -250,6 +329,13 @@ def test_purchase_and_refund_keep_merchant_aggregates_in_sync(tmp_path: Path):
     assert float(merchant_after_refund.frozen_balance) == 0.0
     assert library is not None
     assert library.sold_count == 0
+    assert bot_after_refund is not None
+    assert bot_after_refund.total_orders == 1
+    assert float(bot_after_refund.total_revenue) == 0.0
+    assert agent_after_refund is not None
+    assert agent_after_refund.total_orders == 1
+    assert float(agent_after_refund.total_profit) == 0.0
+    assert float(agent_after_refund.frozen_balance) == 0.0
 
 
 def test_checkout_bot_order_updates_merchant_aggregates(tmp_path: Path):
@@ -274,6 +360,8 @@ def test_checkout_bot_order_updates_merchant_aggregates(tmp_path: Path):
     try:
         merchant = session.exec(select(Merchant).where(Merchant.id == seeded["merchant_id"])).first()
         order = session.exec(select(Order).where(Order.id == int(payload["id"]))).first()
+        bot = session.exec(select(BotInstance).where(BotInstance.id == seeded["bot_id"])).first()
+        agent = session.exec(select(Agent).where(Agent.id == seeded["agent_id"])).first()
     finally:
         session.close()
 
@@ -285,3 +373,11 @@ def test_checkout_bot_order_updates_merchant_aggregates(tmp_path: Path):
     assert order is not None
     assert float(order.platform_profit) == 2.0
     assert float(order.supplier_profit) == 18.0
+    assert float(order.agent_profit) == 2.0
+    assert bot is not None
+    assert bot.total_orders == 1
+    assert float(bot.total_revenue) == 20.0
+    assert agent is not None
+    assert agent.total_orders == 1
+    assert float(agent.total_profit) == 2.0
+    assert float(agent.frozen_balance) == 2.0

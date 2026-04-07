@@ -6,6 +6,7 @@ from typing import Optional
 
 from sqlmodel import Session, select
 
+from services.business_stats_service import sync_bot_and_related_agent_fields
 from services.deposit_wallet_resolver import resolve_wallet_by_bot_or_raise
 from shared.models.admin_audit_log import AdminAuditLog
 from shared.models.admin_user import AdminUser
@@ -63,6 +64,7 @@ def _ensure_bot_account(session: Session, *, user: User, bot: BotInstance) -> Bo
     )
     session.add(account)
     session.flush()
+    sync_bot_and_related_agent_fields(session, bot_id=int(bot.id or 0))
     return account
 
 

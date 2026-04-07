@@ -8,6 +8,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.business_stats_service import sync_bot_and_related_agent_fields
 from services.merchant_aggregate_service import reverse_completed_sale
 from shared.database import get_db_session
 from shared.models.admin_audit_log import AdminAuditLog
@@ -304,6 +305,8 @@ def refund_order(
             )
         )
 
+        session.flush()
+        sync_bot_and_related_agent_fields(session, bot_id=int(order.bot_id))
         session.commit()
     except Exception:
         session.rollback()

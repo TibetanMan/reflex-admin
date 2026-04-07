@@ -9,6 +9,11 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.business_stats_service import (
+    get_bot_business_truth,
+    sync_agent_business_fields,
+    sync_bot_and_related_agent_fields,
+)
 from services.wallet_config_sync import sync_bot_wallet_from_address
 from shared.database import get_db_session
 from shared.models.agent import Agent
@@ -17,7 +22,7 @@ from shared.models.bot_instance import BotInstance, BotStatus
 from shared.models.bot_user_account import BotUserAccount
 from shared.models.cart import CartItem
 from shared.models.deposit import Deposit
-from shared.models.order import Order, OrderStatus
+from shared.models.order import Order
 from shared.models.product import ProductItem
 from shared.models.user import User
 from shared.models.user_export import UserBotSource
@@ -87,35 +92,6 @@ def _to_row(
     }
 
 
-def _aggregate_bot_metrics(
-    session: Session,
-    *,
-    bot_ids: set[int],
-) -> tuple[dict[int, int], dict[int, int], dict[int, float]]:
-    user_count_map: dict[int, int] = {}
-    order_count_map: dict[int, int] = {}
-    revenue_map: dict[int, float] = {}
-
-    if bot_ids:
-        accounts = list(
-            session.exec(select(BotUserAccount).where(BotUserAccount.bot_id.in_(list(bot_ids)))).all()  # type: ignore[arg-type]
-        )
-        for row in accounts:
-            bid = int(row.bot_id)
-            user_count_map[bid] = user_count_map.get(bid, 0) + 1
-
-        orders = list(
-            session.exec(select(Order).where(Order.bot_id.in_(list(bot_ids)))).all()  # type: ignore[arg-type]
-        )
-        for row in orders:
-            bid = int(row.bot_id)
-            order_count_map[bid] = order_count_map.get(bid, 0) + 1
-            status_text = _status_text(row.status)
-            if status_text in {OrderStatus.PAID.value, OrderStatus.COMPLETED.value}:
-                revenue_map[bid] = round(revenue_map.get(bid, 0.0) + float(row.total_amount or 0), 2)
-    return user_count_map, order_count_map, revenue_map
-
-
 def list_bot_owner_options(
     *,
     session_factory: Optional[Callable[[], Session]] = None,
@@ -139,7 +115,6 @@ def list_bots_snapshot(
     session = make_session()
     try:
         bots = list(session.exec(select(BotInstance).order_by(BotInstance.created_at.desc())).all())
-        bot_ids = {int(item.id or 0) for item in bots if int(item.id or 0) > 0}
         agent_ids = {int(item.owner_agent_id or 0) for item in bots if item.owner_agent_id}
         agents = list(session.exec(select(Agent)).all())
         agent_map = {
@@ -147,14 +122,17 @@ def list_bots_snapshot(
             for item in agents
             if int(item.id or 0) in agent_ids
         }
-        user_count_map, order_count_map, revenue_map = _aggregate_bot_metrics(session, bot_ids=bot_ids)
+        bot_truth_map = {
+            int(item.id or 0): get_bot_business_truth(session, bot_id=int(item.id or 0))
+            for item in bots
+        }
         return [
             _to_row(
                 item,
                 agent_map,
-                user_count_map=user_count_map,
-                order_count_map=order_count_map,
-                revenue_map=revenue_map,
+                user_count_map={int(item.id or 0): int(bot_truth_map[int(item.id or 0)]["total_users"])},
+                order_count_map={int(item.id or 0): int(bot_truth_map[int(item.id or 0)]["total_orders"])},
+                revenue_map={int(item.id or 0): float(bot_truth_map[int(item.id or 0)]["total_revenue"])},
             )
             for item in bots
         ]
@@ -339,6 +317,7 @@ def create_bot_record(
         session.add(bot)
         session.flush()
         sync_bot_wallet_from_address(session, bot=bot)
+        sync_bot_and_related_agent_fields(session, bot_id=int(bot.id or 0))
         session.commit()
         session.refresh(bot)
     except Exception:
@@ -374,6 +353,7 @@ def update_bot_record(
         if bot is None:
             raise ValueError("Bot not found.")
 
+        old_agent_id = int(bot.owner_agent_id or 0)
         owner_agent_id, is_platform_bot = _resolve_owner_name(session, owner_name)
         bot.name = name_text
         bot.owner_agent_id = owner_agent_id
@@ -386,6 +366,11 @@ def update_bot_record(
         session.add(bot)
         session.flush()
         sync_bot_wallet_from_address(session, bot=bot)
+        sync_bot_and_related_agent_fields(
+            session,
+            bot_id=int(bot.id or 0),
+            extra_agent_ids=[old_agent_id],
+        )
         session.commit()
         session.refresh(bot)
     except Exception:
@@ -432,6 +417,7 @@ def delete_bot_record(
         bot = session.exec(select(BotInstance).where(BotInstance.id == target_bot_id)).first()
         if bot is None:
             raise ValueError("Bot not found.")
+        old_agent_id = int(bot.owner_agent_id or 0)
 
         fallback_bot_id = _pick_fallback_bot_id(session, exclude_bot_id=target_bot_id)
 
@@ -514,6 +500,17 @@ def delete_bot_record(
             session.add(row)
 
         session.delete(bot)
+        session.flush()
+        if fallback_bot_id is not None:
+            fallback_bot = session.exec(select(BotInstance).where(BotInstance.id == int(fallback_bot_id))).first()
+            fallback_agent_id = int(fallback_bot.owner_agent_id or 0) if fallback_bot is not None else 0
+            sync_bot_and_related_agent_fields(
+                session,
+                bot_id=int(fallback_bot_id),
+                extra_agent_ids=[old_agent_id, fallback_agent_id],
+            )
+        elif old_agent_id > 0:
+            sync_agent_business_fields(session, agent_id=old_agent_id)
         session.commit()
     except Exception:
         session.rollback()

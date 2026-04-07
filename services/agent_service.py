@@ -9,6 +9,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.business_stats_service import get_agent_business_truth, sync_bot_and_related_agent_fields
 from shared.database import get_db_session
 from shared.models.admin_user import AdminRole, AdminUser
 from shared.models.agent import Agent
@@ -50,8 +51,7 @@ def _ensure_unique_admin_identity(session: Session, base: str) -> tuple[str, str
 def _to_row(agent: Agent, bots: list[BotInstance], *, session: Session) -> dict[str, Any]:
     bot_rows = [item for item in bots if int(item.owner_agent_id or 0) == int(agent.id or 0)]
     primary_bot = bot_rows[0] if bot_rows else None
-    total_users = sum(int(item.total_users or 0) for item in bot_rows)
-    total_orders = sum(int(item.total_orders or 0) for item in bot_rows)
+    truth = get_agent_business_truth(session, agent_id=int(agent.id or 0))
     return {
         "id": int(agent.id or 0),
         "name": str(agent.name),
@@ -65,10 +65,12 @@ def _to_row(agent: Agent, bots: list[BotInstance], *, session: Session) -> dict[
         "usdt_address": str(agent.usdt_address or ""),
         "is_active": bool(agent.is_active),
         "is_verified": bool(agent.is_verified),
-        "total_bots": len(bot_rows),
-        "total_users": total_users,
-        "total_orders": total_orders,
-        "total_profit": float(agent.total_profit or 0),
+        "total_bots": int(truth["total_bots"]),
+        "total_users": int(truth["total_users"]),
+        "total_orders": int(truth["total_orders"]),
+        "total_profit": float(truth["total_profit"]),
+        "balance": float(truth["balance"]),
+        "frozen_balance": float(truth["frozen_balance"]),
         "created_at": agent.created_at.strftime("%Y-%m-%d %H:%M"),
         "campaign": get_agent_campaign_summary(agent_id=int(agent.id or 0), session=session),
     }
@@ -176,6 +178,8 @@ def create_agent_with_bot(
             total_revenue=0,
         )
         session.add(bot)
+        session.flush()
+        sync_bot_and_related_agent_fields(session, bot_id=int(bot.id or 0))
         session.commit()
     except Exception:
         session.rollback()
@@ -256,6 +260,8 @@ def update_agent_record(
             bot.usdt_address = str(usdt_address or "").strip() or None
             bot.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
         session.add(bot)
+        session.flush()
+        sync_bot_and_related_agent_fields(session, bot_id=int(bot.id or 0))
 
         session.commit()
     except Exception:

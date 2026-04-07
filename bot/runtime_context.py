@@ -7,6 +7,7 @@ from typing import Any, Callable, Optional
 
 from sqlmodel import Session, select
 
+from services.business_stats_service import sync_bot_and_related_agent_fields
 from shared.database import get_db_session
 from shared.models.bot_instance import BotInstance, BotStatus
 from shared.models.bot_user_account import BotUserAccount
@@ -82,6 +83,7 @@ def ensure_runtime_identity(
         bot_id = int(bot.id)
 
         user = session.exec(select(User).where(User.telegram_id == telegram_id)).first()
+        previous_bot_id = int(user.from_bot_id or 0) if user is not None and user.from_bot_id else 0
         username = _as_text(getattr(tg_user, "username", None))
         first_name = _as_text(getattr(tg_user, "first_name", None))
         last_name = _as_text(getattr(tg_user, "last_name", None))
@@ -138,6 +140,10 @@ def ensure_runtime_identity(
             account.last_active_at = now
         session.add(account)
 
+        session.flush()
+        sync_bot_and_related_agent_fields(session, bot_id=bot_id)
+        if previous_bot_id > 0 and previous_bot_id != bot_id:
+            sync_bot_and_related_agent_fields(session, bot_id=previous_bot_id)
         session.commit()
         session.refresh(bot)
         session.refresh(user)
