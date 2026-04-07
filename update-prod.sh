@@ -92,7 +92,7 @@ require_command docker
 require_command curl
 
 CURRENT_STEP="checking clean git worktree"
-WORKTREE_STATUS="$(git status --porcelain)"
+WORKTREE_STATUS="$(git status --porcelain --untracked-files=no)"
 if [[ -n "$WORKTREE_STATUS" ]]; then
   echo "[ERROR] Working tree is not clean." >&2
   echo "$WORKTREE_STATUS" >&2
